@@ -8,6 +8,8 @@
 
 ## Subida inicial
 
+Nota (Windows): los comandos de esta guía que usan rutas tipo `/opt/...` y `rsync` se ejecutan en el servidor Linux (Droplet) o desde WSL. En PowerShell local, usa `ssh` para entrar al droplet y `scp`/zip para subir archivos.
+
 1. En el servidor:
 
 ```bash
@@ -17,12 +19,24 @@ mkdir -p /opt/trading_bot
 2. Desde tu PC, sube el código (sin datos runtime):
 
 ```bash
+SERVER_IP=161.35.107.114
 rsync -av --delete \
   --exclude node_modules \
   --exclude .env \
   --exclude memoria_aether.json \
   --exclude trading_notes \
-  ./ root@137.184.131.36:/opt/trading_bot/
+  ./ root@$SERVER_IP:/opt/trading_bot/
+```
+
+Alternativa (PowerShell en Windows, sin rsync):
+
+```powershell
+$SERVER_IP="161.35.107.114"
+cd $HOME\Music\Trading_bot
+$items = Get-ChildItem -Force | Where-Object { $_.Name -notin @('node_modules','.env','trading_notes','memoria_aether.json') }
+Compress-Archive -Path $items.FullName -DestinationPath trading_bot.zip -Force
+scp .\trading_bot.zip root@$SERVER_IP:/opt/trading_bot.zip
+ssh root@$SERVER_IP "mkdir -p /opt/trading_bot && apt-get update -y && apt-get install -y unzip && unzip -o /opt/trading_bot.zip -d /opt/trading_bot"
 ```
 
 3. En el servidor:
@@ -92,12 +106,13 @@ journalctl -u trading-bot -f
 1. Desde tu PC (no pisa `trading_notes` ni `memoria_aether.json`):
 
 ```bash
+SERVER_IP=161.35.107.114
 rsync -av --delete \
   --exclude node_modules \
   --exclude .env \
   --exclude memoria_aether.json \
   --exclude trading_notes \
-  ./ root@137.184.131.36:/opt/trading_bot/
+  ./ root@$SERVER_IP:/opt/trading_bot/
 ```
 
 2. En el servidor:
@@ -107,3 +122,50 @@ cd /opt/trading_bot
 npm ci --omit=dev
 systemctl restart trading-bot
 ```
+
+## API HTTP (opcional)
+
+Si quieres consumir el bot desde una web (por ejemplo en Vercel), puedes levantar `api.js` como un servicio aparte.
+
+1. Completa en `/opt/trading_bot/.env`:
+
+- `TRADING_BOT_API_KEY`
+- `TRADING_BOT_API_HOST` (recomendado `127.0.0.1` si usas reverse proxy)
+- `TRADING_BOT_API_PORT`
+
+2. Crea el unit file:
+
+```bash
+cat >/etc/systemd/system/trading-bot-api.service <<'EOF'
+[Unit]
+Description=Trading Bot API (privada)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/trading_bot
+EnvironmentFile=/opt/trading_bot/.env
+ExecStart=/usr/bin/node /opt/trading_bot/api.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+3. Activa y arranca:
+
+```bash
+systemctl daemon-reload
+systemctl enable trading-bot-api
+systemctl restart trading-bot-api
+systemctl status trading-bot-api --no-pager
+```
+
+### Cloudflare Tunnel (recomendado)
+
+Si mantienes `TRADING_BOT_API_HOST=127.0.0.1`, puedes exponer la API con un dominio HTTPS usando Cloudflare Tunnel, sin abrir puertos entrantes.
+
+Ver [CLOUDFLARE.md](CLOUDFLARE.md).

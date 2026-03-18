@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trading Bot</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1220;
+        --panel: #0f1b33;
+        --text: #e9eefc;
+        --muted: #9db0d9;
+        --accent: #5fa8ff;
+        --danger: #ff6b6b;
+        --ok: #5cffb0;
+        --border: rgba(255, 255, 255, 0.08);
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: radial-gradient(1200px 600px at 20% 0%, rgba(95, 168, 255, 0.15), transparent),
+          radial-gradient(900px 500px at 90% 20%, rgba(92, 255, 176, 0.12), transparent), var(--bg);
+        color: var(--text);
+      }
+      header {
+        padding: 24px 16px 12px;
+        max-width: 980px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 650;
+        letter-spacing: 0.2px;
+      }
+      .sub {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 12px 16px 28px;
+        display: grid;
+        grid-template-columns: 360px 1fr;
+        gap: 12px;
+      }
+      @media (max-width: 900px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        background: rgba(15, 27, 51, 0.85);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 14px;
+        backdrop-filter: blur(6px);
+      }
+      .row {
+        display: grid;
+        gap: 10px;
+      }
+      label {
+        display: grid;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+      }
+      input,
+      select {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 10px;
+        outline: none;
+      }
+      input:focus,
+      select:focus {
+        border-color: rgba(95, 168, 255, 0.5);
+      }
+      .btns {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      button {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 10px;
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: rgba(95, 168, 255, 0.6);
+        background: rgba(95, 168, 255, 0.18);
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .status {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 10px;
+      }
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid var(--border);
+      }
+      .dot.ok {
+        background: rgba(92, 255, 176, 0.6);
+        border-color: rgba(92, 255, 176, 0.6);
+      }
+      .dot.bad {
+        background: rgba(255, 107, 107, 0.7);
+        border-color: rgba(255, 107, 107, 0.7);
+      }
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 12px;
+        line-height: 1.5;
+        color: #d9e4ff;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .title {
+        font-size: 13px;
+        font-weight: 650;
+        margin: 0 0 10px;
+      }
+      .tabs {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+      .tab {
+        font-size: 12px;
+        padding: 8px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.05);
+        cursor: pointer;
+      }
+      .tab.active {
+        border-color: rgba(95, 168, 255, 0.7);
+        background: rgba(95, 168, 255, 0.18);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      th,
+      td {
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Trading Bot</h1>
+      <div class="sub">UI privada (Cloudflare Pages) → Functions → API privada (Tunnel)</div>
+    </header>
+    <main>
+      <section class="card">
+        <div class="row">
+          <label>
+            Exchange
+            <input id="exchange" value="binance" />
+          </label>
+          <label>
+            Symbol
+            <input id="symbol" value="BTC/USDT" />
+          </label>
+          <label>
+            Timeframe
+            <select id="timeframe">
+              <option value="15m">15m</option>
+              <option value="1h">1h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1d</option>
+              <option value="all">all</option>
+            </select>
+          </label>
+          <div class="btns">
+            <button class="primary" id="btnSignal">Señal</button>
+            <button id="btnPositions">Posiciones</button>
+          </div>
+          <div class="status">
+            <div class="dot" id="dot"></div>
+            <div id="healthTxt">Health: ...</div>
+          </div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="tabs">
+          <div class="tab active" data-tab="out">Salida</div>
+          <div class="tab" data-tab="positions">Paper</div>
+        </div>
+        <div id="panelOut">
+          <div class="title">Respuesta</div>
+          <pre id="out" class="muted">Listo.</pre>
+        </div>
+        <div id="panelPositions" style="display: none">
+          <div class="title">Paper positions</div>
+          <div class="muted" id="posEmpty">Sin posiciones.</div>
+          <table id="posTable" style="display: none">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th>Entry</th>
+                <th>SL</th>
+                <th>TP</th>
+                <th>TF</th>
+                <th>Exch</th>
+              </tr>
+            </thead>
+            <tbody id="posBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const out = $("out");
+      const dot = $("dot");
+      const healthTxt = $("healthTxt");
+      const btnSignal = $("btnSignal");
+      const btnPositions = $("btnPositions");
+
+      function setTab(name) {
+        document.querySelectorAll(".tab").forEach((t) => {
+          t.classList.toggle("active", t.dataset.tab === name);
+        });
+        $("panelOut").style.display = name === "out" ? "" : "none";
+        $("panelPositions").style.display = name === "positions" ? "" : "none";
+      }
+
+      document.querySelectorAll(".tab").forEach((t) => {
+        t.addEventListener("click", () => setTab(t.dataset.tab));
+      });
+
+      function show(obj) {
+        out.classList.remove("muted");
+        out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+      }
+
+      function showErr(err) {
+        out.classList.remove("muted");
+        out.textContent = String(err?.message ?? err ?? "error");
+      }
+
+      async function api(path, opts) {
+        const res = await fetch(path, {
+          method: opts?.method ?? "GET",
+          headers: { "content-type": "application/json" },
+          body: opts?.body ? JSON.stringify(opts.body) : undefined
+        });
+        const txt = await res.text();
+        let data = null;
+        try {
+          data = txt ? JSON.parse(txt) : null;
+        } catch {
+          data = txt;
+        }
+        if (!res.ok) {
+          const e = new Error("request_failed");
+          e.status = res.status;
+          e.data = data;
+          throw e;
+        }
+        return data;
+      }
+
+      async function refreshHealth() {
+        try {
+          const h = await api("/api/health");
+          dot.classList.remove("bad");
+          dot.classList.add("ok");
+          healthTxt.textContent = `Health: OK (${h?.ts ?? ""})`;
+        } catch {
+          dot.classList.remove("ok");
+          dot.classList.add("bad");
+          healthTxt.textContent = "Health: ERROR";
+        }
+      }
+
+      async function loadPositions() {
+        const data = await api("/api/paper/positions");
+        const items = Array.isArray(data?.items) ? data.items : [];
+        const empty = $("posEmpty");
+        const table = $("posTable");
+        const body = $("posBody");
+        body.innerHTML = "";
+        if (!items.length) {
+          empty.style.display = "";
+          table.style.display = "none";
+          return;
+        }
+        empty.style.display = "none";
+        table.style.display = "";
+        for (const p of items) {
+          const tr = document.createElement("tr");
+          const cells = [
+            p?.id,
+            p?.symbol,
+            p?.side,
+            p?.entry,
+            p?.sl,
+            p?.tp,
+            p?.timeframe,
+            p?.exchange
+          ];
+          for (const c of cells) {
+            const td = document.createElement("td");
+            td.textContent = c === null || c === undefined ? "" : String(c);
+            tr.appendChild(td);
+          }
+          body.appendChild(tr);
+        }
+      }
+
+      btnSignal.addEventListener("click", async () => {
+        btnSignal.disabled = true;
+        try {
+          setTab("out");
+          const exchange = $("exchange").value.trim();
+          const symbol = $("symbol").value.trim();
+          const timeframe = $("timeframe").value.trim();
+          const data = await api("/api/signal", { method: "POST", body: { exchange, symbol, timeframe } });
+          show(data?.text ?? data);
+        } catch (e) {
+          showErr(e?.data ?? e);
+        } finally {
+          btnSignal.disabled = false;
+        }
+      });
+
+      btnPositions.addEventListener("click", async () => {
+        btnPositions.disabled = true;
+        try {
+          setTab("positions");
+          await loadPositions();
+        } catch (e) {
+          setTab("out");
+          showErr(e?.data ?? e);
+        } finally {
+          btnPositions.disabled = false;
+        }
+      });
+
+      refreshHealth();
+      setInterval(refreshHealth, 15000);
+    </script>
+  </body>
+</html>
+

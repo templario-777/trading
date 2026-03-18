@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
+    "api": "node api.js",
     "selftest": "node index.js --selftest"
   },
   "dependencies": {
