@@ -95,6 +95,16 @@ En Cloudflare Pages:
 
 La UI consume `GET/POST /api/*` en el mismo dominio Pages, y Pages Functions reenvía al dominio del tunnel.
 
+## 9) Publicar tu web como `web.tu-dominio.com` (Custom Domain)
+
+Si quieres que tu UI quede en un subdominio “bonito” como `web.tu-dominio.com` (por ejemplo `web.trading` si tu dominio es `trading`):
+
+1. En Cloudflare Pages → tu proyecto → Custom domains → Add custom domain.
+2. Escribe `web.tu-dominio.com`.
+3. Sigue el asistente: Cloudflare creará/verificará el DNS (normalmente un `CNAME` o registro equivalente) y emitirá TLS automáticamente.
+
+La UI seguirá llamando a `/api/*` en el mismo dominio, y el proxy de Pages (Functions) seguirá usando `BOT_API_BASE_URL` hacia tu `api.tu-dominio.com` expuesto por Tunnel.
+
 ## Extra (opcional)
 
 - Cloudflare Access: además del token, puedes proteger el hostname con Access Policies para permitir solo tu cuenta.

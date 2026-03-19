@@ -60,6 +60,8 @@ La UI queda en `https://<tu-proyecto>.pages.dev/` y consume:
 - `GET /api/paper/positions`
 - `GET /api/paper/trades?limit=100`
 
+Si quieres un dominio propio (ej. `web.tu-dominio.com`), agrega un Custom Domain en Cloudflare Pages y sigue el asistente de DNS/TLS.
+
 ### Proxy en Vercel
 
 Este repo incluye endpoints serverless en `api/` para usar Vercel como “puente” y así no filtrar el token al navegador.
