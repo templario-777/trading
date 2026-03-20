@@ -133,7 +133,8 @@ async function handle(req, res) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
 
-  if (!isAuthorized(req) && path !== "/health" && path !== "/api/health" && path !== "/api/meta") {
+  const needsAuth = path.startsWith("/api/") && path !== "/api/health" && path !== "/api/meta";
+  if (needsAuth && !isAuthorized(req)) {
     sendJson(res, 401, { error: "unauthorized" }, cors);
     return;
   }
