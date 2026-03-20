@@ -91,6 +91,12 @@ function roundTo(value, decimals) {
   return Math.round(value * m) / m;
 }
 
+function fmt(value, decimals = 4) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "na";
+  return n.toFixed(Math.max(0, Math.min(12, Math.floor(decimals))));
+}
+
 function formatNumber(value, maxDecimals = 6) {
   if (!Number.isFinite(value)) return "N/A";
   const abs = Math.abs(value);
