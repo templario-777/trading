@@ -116,9 +116,13 @@ function isAuthorized(req) {
     String(process.env.TRADING_BOT_API_ALLOW_NO_AUTH ?? "").trim().toLowerCase()
   );
   if (allowNoAuth && isLocalRequest(req)) return true;
-  const key = getEnvAny(["TRADING_BOT_API_KEY"]);
-  if (!key) return false;
-  const token = getBearerToken(req);
+  const keyRaw = getEnvAny(["TRADING_BOT_API_KEY"]);
+  if (!keyRaw) return false;
+  let key = String(keyRaw).trim();
+  if (key.startsWith("\"") && key.endsWith("\"") && key.length >= 2) key = key.slice(1, -1);
+  let token = getBearerToken(req);
+  token = token ? String(token).trim() : null;
+  if (token && token.startsWith("\"") && token.endsWith("\"") && token.length >= 2) token = token.slice(1, -1);
   return Boolean(token) && token === key;
 }
 
