@@ -80,10 +80,12 @@ function shouldRotateProxy(e) {
 
 function hintForRegionBlock(exchange) {
   const ex = String(exchange ?? "").trim().toLowerCase() || DEFAULT_EXCHANGE;
+  const hide = !["0", "false", "off", "no"].includes(String(process.env.HIDE_REGION_HINTS ?? "1").trim().toLowerCase());
+  if (hide) return `Exchange no disponible desde este servidor: ${ex}.`;
   const proxies = proxyPool.length ? "PROXY_URLS" : "";
-  const alt = ex.includes("binance") ? " (prueba bybit, okx, kraken o coinbase)" : "";
-  const p = proxies ? ` Configura ${proxies} con proxies salientes en una región permitida.` : "";
-  return `Acceso restringido por región en ${ex}.${p}${alt}`.trim();
+  const alt = ex.includes("binance") ? " Prueba bybit/okx/kraken/coinbase." : " Prueba otro exchange.";
+  const p = proxies ? ` Configura ${proxies}.` : "";
+  return `Exchange no disponible: ${ex}.${p}${alt}`.trim();
 }
 
 function roundTo(value, decimals) {
@@ -95,6 +97,38 @@ function fmt(value, decimals = 4) {
   const n = Number(value);
   if (!Number.isFinite(n)) return "na";
   return n.toFixed(Math.max(0, Math.min(12, Math.floor(decimals))));
+}
+
+function isRegionBlockedError(e) {
+  const status = extractHttpStatus(e);
+  if (status === 451) return true;
+  if (status && [403, 451].includes(status) && shouldRotateProxy(e)) return true;
+  const text = toErrText(e);
+  return (
+    text.includes("not available in your region") ||
+    text.includes("not available in this region") ||
+    text.includes("restricted") ||
+    text.includes("country") ||
+    text.includes("region")
+  );
+}
+
+function parseFallbackExchanges(primaryExchange) {
+  const enabled = !["0", "false", "off", "no"].includes(
+    String(process.env.EXCHANGE_FALLBACK_ENABLED ?? "1").trim().toLowerCase()
+  );
+  if (!enabled) return [];
+  const primary = String(primaryExchange ?? DEFAULT_EXCHANGE).trim().toLowerCase() || DEFAULT_EXCHANGE;
+  const raw = String(process.env.FALLBACK_EXCHANGES ?? "").trim();
+  const list = raw
+    ? raw
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean)
+    : primary.includes("binance")
+      ? ["bybit", "okx", "kraken", "coinbase"]
+      : [];
+  return list.filter((x, i) => x && x !== primary && list.indexOf(x) === i);
 }
 
 function formatNumber(value, maxDecimals = 6) {
@@ -1806,7 +1840,7 @@ function resolveMarketSymbol(markets, symbol) {
   return null;
 }
 
-export async function fetchCandles({ exchange, symbol, timeframe, limit = DEFAULT_LIMIT }) {
+export async function fetchCandles({ exchange, symbol, timeframe, limit = DEFAULT_LIMIT, _fallbackDepth = 0 } = {}) {
   const ex = getExchange(exchange);
   if (!ex.has?.fetchOHLCV) throw new Error(`El exchange ${exchange} no soporta OHLCV`);
   const maxAttempts = Number.isFinite(Number(process.env.FETCH_RETRY_ATTEMPTS))
@@ -1839,13 +1873,23 @@ export async function fetchCandles({ exchange, symbol, timeframe, limit = DEFAUL
   }
 
   const status = extractHttpStatus(lastErr);
-  if (status === 451) {
+  const regionBlocked = isRegionBlockedError(lastErr) || status === 451;
+  const fallbackDepth = Math.max(0, Math.floor(Number(_fallbackDepth) || 0));
+  if (fallbackDepth === 0 && regionBlocked) {
+    const fallbacks = parseFallbackExchanges(exchange);
+    for (const fb of fallbacks) {
+      try {
+        return await fetchCandles({ exchange: fb, symbol, timeframe, limit, _fallbackDepth: fallbackDepth + 1 });
+      } catch {
+      }
+    }
     throw new Error(hintForRegionBlock(exchange));
   }
+  if (regionBlocked) throw new Error(hintForRegionBlock(exchange));
   throw lastErr ?? new Error("fetchCandles falló");
 }
 
-export async function fetchLastPrice({ exchange, symbol }) {
+export async function fetchLastPrice({ exchange, symbol, _fallbackDepth = 0 } = {}) {
   const ex = getExchange(exchange);
   if (!ex.has?.fetchTicker) throw new Error(`El exchange ${exchange} no soporta ticker`);
   const maxAttempts = Number.isFinite(Number(process.env.FETCH_RETRY_ATTEMPTS))
@@ -1877,9 +1921,19 @@ export async function fetchLastPrice({ exchange, symbol }) {
   }
 
   const status = extractHttpStatus(lastErr);
-  if (status === 451) {
+  const regionBlocked = isRegionBlockedError(lastErr) || status === 451;
+  const fallbackDepth = Math.max(0, Math.floor(Number(_fallbackDepth) || 0));
+  if (fallbackDepth === 0 && regionBlocked) {
+    const fallbacks = parseFallbackExchanges(exchange);
+    for (const fb of fallbacks) {
+      try {
+        return await fetchLastPrice({ exchange: fb, symbol, _fallbackDepth: fallbackDepth + 1 });
+      } catch {
+      }
+    }
     throw new Error(hintForRegionBlock(exchange));
   }
+  if (regionBlocked) throw new Error(hintForRegionBlock(exchange));
   throw lastErr ?? new Error("fetchLastPrice falló");
 }
 
