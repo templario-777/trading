@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Trading Bot</title>
+    <title>Aether Connect</title>
     <style>
       :root {
         color-scheme: dark;
@@ -116,20 +116,28 @@
         color: var(--muted);
         margin-top: 10px;
       }
-      .dot {
-        width: 9px;
-        height: 9px;
+      .badges {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .badge {
+        font-size: 12px;
+        padding: 6px 10px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.2);
         border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--muted);
       }
-      .dot.ok {
-        background: rgba(92, 255, 176, 0.6);
+      .badge.ok {
         border-color: rgba(92, 255, 176, 0.6);
+        background: rgba(92, 255, 176, 0.10);
+        color: #b6ffe0;
       }
-      .dot.bad {
-        background: rgba(255, 107, 107, 0.7);
-        border-color: rgba(255, 107, 107, 0.7);
+      .badge.bad {
+        border-color: rgba(255, 107, 107, 0.6);
+        background: rgba(255, 107, 107, 0.10);
+        color: #ffd1d1;
       }
       pre {
         margin: 0;
@@ -184,8 +192,8 @@
   </head>
   <body>
     <header>
-      <h1>Trading Bot</h1>
-      <div class="sub">Panel privado (Señales, IA, noticias y paper)</div>
+      <h1>Aether Connect</h1>
+      <div class="sub">Panel privado de trading (señales, IA, noticias y paper)</div>
     </header>
     <main>
       <section class="card">
@@ -219,8 +227,11 @@
             <button id="btnPositions">Posiciones</button>
           </div>
           <div class="status">
-            <div class="dot" id="dot"></div>
-            <div id="healthTxt">Health: ...</div>
+            <div class="badges">
+              <div class="badge" id="bHealth">Health: ...</div>
+              <div class="badge" id="bAi">IA: ...</div>
+              <div class="badge" id="bAuth">API: ...</div>
+            </div>
           </div>
         </div>
       </section>
@@ -260,13 +271,10 @@
       const $ = (id) => document.getElementById(id);
       const out = $("out");
       const chartImg = $("chartImg");
-      const dot = $("dot");
-      const healthTxt = $("healthTxt");
+      const bHealth = $("bHealth");
+      const bAi = $("bAi");
+      const bAuth = $("bAuth");
       const apiKeyInput = $("apiKey");
-      const metaTxt = document.createElement("div");
-      metaTxt.className = "muted";
-      metaTxt.style.marginTop = "6px";
-      healthTxt.parentElement.appendChild(metaTxt);
       const btnSignal = $("btnSignal");
       const btnAi = $("btnAi");
       const btnNews = $("btnNews");
@@ -352,22 +360,33 @@
       async function refreshHealth() {
         try {
           const h = await api("/api/health");
-          dot.classList.remove("bad");
-          dot.classList.add("ok");
-          healthTxt.textContent = `Health: OK (${h?.ts ?? ""})`;
+          bHealth.classList.remove("bad");
+          bHealth.classList.add("ok");
+          bHealth.textContent = `Health: OK`;
         } catch {
-          dot.classList.remove("ok");
-          dot.classList.add("bad");
-          healthTxt.textContent = "Health: ERROR";
+          bHealth.classList.remove("ok");
+          bHealth.classList.add("bad");
+          bHealth.textContent = "Health: ERROR";
         }
       }
 
       async function refreshMeta() {
         try {
           const m = await api("/api/meta");
-          metaTxt.textContent = `IA key: ${m?.deepseekKey ? "OK" : "FALTA"} | Auth API: ${m?.apiKeyEnabled ? "ON" : "OFF"}`;
+          bAi.classList.toggle("ok", Boolean(m?.deepseekKey));
+          bAi.classList.toggle("bad", !m?.deepseekKey);
+          bAi.textContent = `IA: ${m?.deepseekKey ? "OK" : "FALTA"}`;
+
+          bAuth.classList.remove("bad");
+          bAuth.classList.add(m?.apiKeyEnabled ? "ok" : "");
+          bAuth.textContent = `API: ${m?.apiKeyEnabled ? "Auth ON" : "Auth OFF"}`;
         } catch {
-          metaTxt.textContent = "";
+          bAi.classList.remove("ok");
+          bAi.classList.add("bad");
+          bAi.textContent = "IA: ?";
+          bAuth.classList.remove("ok");
+          bAuth.classList.add("bad");
+          bAuth.textContent = "API: ?";
         }
       }
 
