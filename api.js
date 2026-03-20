@@ -1,11 +1,18 @@
 import "dotenv/config";
 import http from "node:http";
 import { URL } from "node:url";
+import fs from "node:fs/promises";
+import pathMod from "node:path";
 
 import {
+  buildAiTradeIdea,
   buildSignal,
+  buildSignalChartUrl,
   closePaperPosition,
+  evaluarGuardiaDeEntrada,
+  fetchNewsSnapshot,
   fetchCandles,
+  formatAiMessage,
   formatSignalMessage,
   getDefaultTimeframes,
   listPaperPositions,
@@ -49,6 +56,15 @@ function sendJson(res, status, obj, extraHeaders = {}) {
     ...extraHeaders
   });
   res.end(body);
+}
+
+function sendText(res, status, text, contentType, extraHeaders = {}) {
+  res.writeHead(status, {
+    "content-type": contentType,
+    "cache-control": "no-store",
+    ...extraHeaders
+  });
+  res.end(String(text ?? ""));
 }
 
 async function readJsonBody(req, limitBytes = 1_000_000) {
@@ -117,7 +133,7 @@ async function handle(req, res) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
 
-  if (!isAuthorized(req) && path !== "/health") {
+  if (!isAuthorized(req) && path !== "/health" && path !== "/api/health" && path !== "/api/meta") {
     sendJson(res, 401, { error: "unauthorized" }, cors);
     return;
   }
@@ -125,6 +141,34 @@ async function handle(req, res) {
   try {
     if (req.method === "GET" && path === "/health") {
       sendJson(res, 200, { ok: true, ts: new Date().toISOString() }, cors);
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/health") {
+      sendJson(res, 200, { ok: true, ts: new Date().toISOString() }, cors);
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/meta") {
+      const deepseekKey = Boolean(getEnvAny(["DEEPSEEK_KEY", "DEEPSEEK_API_KEY"]));
+      const apiKeyEnabled = Boolean(getEnvAny(["TRADING_BOT_API_KEY"])) && !isLocalRequest(req);
+      sendJson(res, 200, { ok: true, ts: new Date().toISOString(), deepseekKey, apiKeyEnabled }, cors);
+      return;
+    }
+
+    if (req.method === "GET" && (path === "/" || path === "/index.html")) {
+      const filePath = pathMod.join(process.cwd(), "public", "index.html");
+      const html = await fs.readFile(filePath, "utf8");
+      sendText(res, 200, html, "text/html; charset=utf-8", cors);
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/news") {
+      const maxTitles = Number.isFinite(Number(url.searchParams.get("maxTitles")))
+        ? Number(url.searchParams.get("maxTitles"))
+        : 10;
+      const data = await fetchNewsSnapshot({ maxTitles });
+      sendJson(res, 200, data, cors);
       return;
     }
 
@@ -153,7 +197,9 @@ async function handle(req, res) {
           try {
             const data = await fetchCandles({ exchange, symbol, timeframe: tf });
             const signal = await buildSignal(data);
-            results.push({ timeframe: tf, signal, text: formatSignalMessage(signal) });
+            const chartUrl = buildSignalChartUrl({ signal, candles: data.candles });
+            const guard = await evaluarGuardiaDeEntrada({ signal, candles: data.candles });
+            results.push({ timeframe: tf, signal, text: formatSignalMessage(signal), chartUrl, guard });
           } catch (e) {
             results.push({ timeframe: tf, error: e?.message ?? String(e) });
           }
@@ -164,7 +210,79 @@ async function handle(req, res) {
 
       const data = await fetchCandles({ exchange, symbol, timeframe });
       const signal = await buildSignal(data);
-      sendJson(res, 200, { exchange, symbol, timeframe, signal, text: formatSignalMessage(signal) }, cors);
+      const chartUrl = buildSignalChartUrl({ signal, candles: data.candles });
+      const guard = await evaluarGuardiaDeEntrada({ chatId: null, signal, candles: data.candles });
+      let text = formatSignalMessage(signal);
+      const sScore = Number(guard?.metrics?.sentimentScore);
+      const sLabel = guard?.metrics?.sentimentLabel ? String(guard.metrics.sentimentLabel) : "";
+      if (Number.isFinite(sScore)) {
+        text += `\n\n📰 Sentimiento: ${Math.round(sScore)}/100 ${sLabel}`.trim();
+      }
+      if (guard?.enabled) {
+        if (guard.allow) {
+          text += `\n\n🛡️ GUARDIA: OK`;
+        } else {
+          const reasons = Array.isArray(guard.reasons) ? guard.reasons : [];
+          text += `\n\n🚫 GUARDIA: BLOQUEAR\n- ${reasons.join("\n- ")}`;
+        }
+      }
+      sendJson(
+        res,
+        200,
+        { exchange, symbol, timeframe, signal, text, chartUrl, guard },
+        cors
+      );
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/ai") {
+      const body = (await readJsonBody(req)) ?? {};
+      const exchange = normalizeExchange(body.exchange);
+      const symbol = normalizeSymbol(body.symbol);
+      const timeframe = normalizeTimeframe(body.timeframe);
+      if (!exchange) {
+        sendJson(res, 400, { error: "exchange_required" }, cors);
+        return;
+      }
+      if (!symbol) {
+        sendJson(res, 400, { error: "symbol_required" }, cors);
+        return;
+      }
+      if (!timeframe || isAllTimeframes(timeframe)) {
+        sendJson(res, 400, { error: "timeframe_required" }, cors);
+        return;
+      }
+      const apiKey = getEnvAny(["DEEPSEEK_KEY", "DEEPSEEK_API_KEY"]);
+      if (!apiKey) {
+        sendJson(res, 400, { error: "missing_env", env: "DEEPSEEK_KEY" }, cors);
+        return;
+      }
+      const data = await fetchCandles({ exchange, symbol, timeframe });
+      const ai = await buildAiTradeIdea({ ...data, apiKey });
+      const pseudoSignal = {
+        symbol: ai.symbol,
+        exchange: ai.exchange,
+        timeframe: ai.timeframe,
+        side: ai.accion === "COMPRA" ? "LONG" : ai.accion === "VENTA" ? "SHORT" : "NEUTRAL",
+        entry: ai.precio_entrada,
+        sl: ai.sl,
+        tp: ai.tp
+      };
+      const chartUrl = buildSignalChartUrl({ signal: pseudoSignal, candles: data.candles });
+      let text = formatAiMessage(ai);
+      const headlines = Array.isArray(ai?.context?.headlines) ? ai.context.headlines : [];
+      const wisdom = String(ai?.context?.wisdom ?? "").trim();
+      const losses = String(ai?.context?.recentLosses ?? "").trim();
+      if (headlines.length) {
+        text += `\n\n📰 NOTICIAS:\n- ${headlines.slice(0, 8).join("\n- ")}`;
+      }
+      if (wisdom) {
+        text += `\n\n🧠 LECCIONES_RECIENTES:\n${wisdom.slice(0, 600)}`;
+      }
+      if (losses) {
+        text += `\n\n⚠️ ERRORES_RECIENTES:\n${losses.slice(0, 600)}`;
+      }
+      sendJson(res, 200, { exchange, symbol, timeframe, ai, text, chartUrl }, cors);
       return;
     }
 
@@ -312,4 +430,3 @@ main().catch((e) => {
   process.stderr.write(`[API] fatal: ${e?.stack ?? e?.message ?? String(e)}\n`);
   process.exitCode = 1;
 });
-

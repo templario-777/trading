@@ -89,7 +89,7 @@
       }
       .btns {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(4, 1fr);
         gap: 10px;
       }
       button {
@@ -192,7 +192,7 @@
         <div class="row">
           <label>
             Exchange
-            <input id="exchange" value="binance" />
+            <input id="exchange" value="binanceus" />
           </label>
           <label>
             Symbol
@@ -208,8 +208,14 @@
               <option value="all">all</option>
             </select>
           </label>
+          <label>
+            API Key (Bearer)
+            <input id="apiKey" type="password" placeholder="TRADING_BOT_API_KEY" />
+          </label>
           <div class="btns">
             <button class="primary" id="btnSignal">Señal</button>
+            <button id="btnAi">IA</button>
+            <button id="btnNews">Noticias</button>
             <button id="btnPositions">Posiciones</button>
           </div>
           <div class="status">
@@ -226,6 +232,8 @@
         <div id="panelOut">
           <div class="title">Respuesta</div>
           <pre id="out" class="muted">Listo.</pre>
+          <div class="title" style="margin-top: 12px">Gráfico</div>
+          <img id="chartImg" alt="chart" style="width: 100%; border-radius: 12px; display: none" />
         </div>
         <div id="panelPositions" style="display: none">
           <div class="title">Paper positions</div>
@@ -251,9 +259,17 @@
     <script>
       const $ = (id) => document.getElementById(id);
       const out = $("out");
+      const chartImg = $("chartImg");
       const dot = $("dot");
       const healthTxt = $("healthTxt");
+      const apiKeyInput = $("apiKey");
+      const metaTxt = document.createElement("div");
+      metaTxt.className = "muted";
+      metaTxt.style.marginTop = "6px";
+      healthTxt.parentElement.appendChild(metaTxt);
       const btnSignal = $("btnSignal");
+      const btnAi = $("btnAi");
+      const btnNews = $("btnNews");
       const btnPositions = $("btnPositions");
 
       function setTab(name) {
@@ -273,15 +289,48 @@
         out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
       }
 
+      function showChart(url) {
+        const u = typeof url === "string" ? url.trim() : "";
+        if (!u) {
+          chartImg.style.display = "none";
+          chartImg.removeAttribute("src");
+          return;
+        }
+        chartImg.src = u;
+        chartImg.style.display = "";
+      }
+
       function showErr(err) {
         out.classList.remove("muted");
-        out.textContent = String(err?.message ?? err ?? "error");
+        const e = err && typeof err === "object" ? err : null;
+        const data = e && "data" in e ? e.data : null;
+        const status = e && "status" in e ? e.status : null;
+        const msg = e && "message" in e ? e.message : null;
+        if (data && typeof data === "object" && data.error === "missing_env" && data.env) {
+          out.textContent = `Falta configurar ${data.env} en el servidor (archivo .env) y reiniciar la API.`;
+          showChart(null);
+          return;
+        }
+        if (data && typeof data === "object" && data.error === "unauthorized") {
+          out.textContent = "No autorizado. Pega tu TRADING_BOT_API_KEY en el campo API Key (Bearer).";
+          showChart(null);
+          return;
+        }
+        const payload = e ? { status, message: msg, data } : err;
+        out.textContent = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+        showChart(null);
       }
 
       async function api(path, opts) {
+        const token = String(apiKeyInput?.value ?? localStorage.getItem("bot_api_key") ?? "").trim();
+        if (apiKeyInput && apiKeyInput.value !== token) apiKeyInput.value = token;
+        if (apiKeyInput) localStorage.setItem("bot_api_key", token);
         const res = await fetch(path, {
           method: opts?.method ?? "GET",
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            ...(token ? { authorization: `Bearer ${token}` } : {})
+          },
           body: opts?.body ? JSON.stringify(opts.body) : undefined
         });
         const txt = await res.text();
@@ -310,6 +359,15 @@
           dot.classList.remove("ok");
           dot.classList.add("bad");
           healthTxt.textContent = "Health: ERROR";
+        }
+      }
+
+      async function refreshMeta() {
+        try {
+          const m = await api("/api/meta");
+          metaTxt.textContent = `IA key: ${m?.deepseekKey ? "OK" : "FALTA"} | Auth API: ${m?.apiKeyEnabled ? "ON" : "OFF"}`;
+        } catch {
+          metaTxt.textContent = "";
         }
       }
 
@@ -357,10 +415,48 @@
           const timeframe = $("timeframe").value.trim();
           const data = await api("/api/signal", { method: "POST", body: { exchange, symbol, timeframe } });
           show(data?.text ?? data);
+          showChart(data?.chartUrl ?? null);
         } catch (e) {
-          showErr(e?.data ?? e);
+          showErr(e);
         } finally {
           btnSignal.disabled = false;
+        }
+      });
+
+      btnAi.addEventListener("click", async () => {
+        btnAi.disabled = true;
+        try {
+          setTab("out");
+          const exchange = $("exchange").value.trim();
+          const symbol = $("symbol").value.trim();
+          const timeframe = $("timeframe").value.trim();
+          const data = await api("/api/ai", { method: "POST", body: { exchange, symbol, timeframe } });
+          show(data?.text ?? data);
+          showChart(data?.chartUrl ?? null);
+        } catch (e) {
+          showErr(e);
+        } finally {
+          btnAi.disabled = false;
+        }
+      });
+
+      btnNews.addEventListener("click", async () => {
+        btnNews.disabled = true;
+        try {
+          setTab("out");
+          const data = await api("/api/news");
+          const titles = Array.isArray(data?.headlines) ? data.headlines : [];
+          const ts = data?.ts ? String(data.ts) : "";
+          const score = Number.isFinite(Number(data?.sentiment?.score)) ? Math.round(Number(data.sentiment.score)) : null;
+          const label = data?.sentiment?.label ? String(data.sentiment.label) : "";
+          const header = [`📰 Noticias (${ts})`, score === null ? "" : `📉 Sentimiento: ${score}/100 ${label}`].filter(Boolean);
+          const text = titles.length ? [...header, "", ...titles.map((t) => `- ${t}`)].join("\n") : [...header, "", `Sin noticias`].join("\n");
+          show(text);
+          showChart(null);
+        } catch (e) {
+          showErr(e);
+        } finally {
+          btnNews.disabled = false;
         }
       });
 
@@ -371,15 +467,16 @@
           await loadPositions();
         } catch (e) {
           setTab("out");
-          showErr(e?.data ?? e);
+          showErr(e);
         } finally {
           btnPositions.disabled = false;
         }
       });
 
       refreshHealth();
+      refreshMeta();
       setInterval(refreshHealth, 15000);
+      setInterval(refreshMeta, 30000);
     </script>
   </body>
 </html>
-

@@ -5,20 +5,32 @@ import fs from "node:fs/promises";
 import {
   buildAiTradeIdea,
   buildSignal,
+  buildSignalChartUrl,
   closePaperPosition,
   detectWhaleTrap,
   fetchCandles,
   fetchLastPrice,
+  fetchNewsSnapshot,
   findSimilarError,
   formatAiMessage,
   formatCloseMessage,
   formatScanMessage,
   formatSignalMessage,
   formatPositionMessage,
+  ajustarAsignacionPorSector,
+  detectarSectorDeMoneda,
+  computeAdxValueFromCandles,
+  getCryptoCycleContext,
+  computeBtcCorrelationBeta,
+  detectVolumeAnomaly,
+  getSectorExposurePct,
+  getWhalePressure,
   getAlertsConfig,
   getDefaultTimeframes,
   listPaperPositions,
   loadMemory,
+  saveMemory,
+  incrementAiStats,
   loadErrorMemory,
   openPaperPosition,
   parseMultiRequest,
@@ -34,8 +46,16 @@ import {
   registrarEnHistorial,
   loadTradeHistory,
   generarReporteSemanal,
+  evaluarGuardiaDeEntrada,
+  evaluateRiskPlanCondition,
+  loadRiskPlans,
+  saveRiskPlans,
+  upsertRiskPlanFromGate,
   readWisdomEntries,
+  readWisdomEntriesAll,
+  appendWisdomEntry,
   learnFromLossWithDeepseek,
+  learnFromTradeWithDeepseek,
   filtrarPorSabiduria,
   generarAutocritica,
   generar_balance_de_aprendizaje,
@@ -141,7 +161,10 @@ async function main() {
   const scanConcurrent = Math.max(1, Math.min(50, Math.floor(Number(process.env.SCAN_CONCURRENT ?? 10))));
   const scanChunkDelayMs = Math.max(0, Math.floor(Number(process.env.SCAN_CHUNK_DELAY_MS ?? 250)));
   let alertsRunning = false;
+  let botStandby = false;
+  let lastPanicAt = 0;
   await saveErrorMemory(await loadErrorMemory());
+  await syncBotStateFromMemory();
 
   process.on("unhandledRejection", (e) => {
     const msg = e?.stack ?? e?.message ?? String(e);
@@ -191,6 +214,78 @@ async function main() {
     if (!adminChatId || !Number.isFinite(adminChatId)) return;
     try {
       await bot.telegram.sendMessage(adminChatId, String(text ?? "").slice(0, 3900));
+    } catch {
+    }
+  }
+
+  async function syncBotStateFromMemory() {
+    try {
+      const mem = await loadMemory();
+      const botCfg = mem.config?.bot && typeof mem.config.bot === "object" ? mem.config.bot : {};
+      botStandby = Boolean(botCfg.standby);
+      lastPanicAt = Number(botCfg.panicAt ?? 0) || 0;
+    } catch {
+      botStandby = false;
+      lastPanicAt = 0;
+    }
+  }
+
+  async function setStandbyMode({ standby, reason, by } = {}) {
+    const want = Boolean(standby);
+    const mem = await loadMemory();
+    mem.config = mem.config && typeof mem.config === "object" ? mem.config : {};
+    mem.config.bot = mem.config.bot && typeof mem.config.bot === "object" ? mem.config.bot : {};
+    mem.config.bot.standby = want;
+    mem.config.bot.standbyReason = want ? String(reason ?? "").trim() : null;
+    mem.config.bot.standbyBy = want ? String(by ?? "").trim() : null;
+    mem.config.bot.panicAt = want ? Date.now() : null;
+    await saveMemory(mem);
+    botStandby = want;
+    lastPanicAt = want ? Date.now() : 0;
+    try {
+      await appendWisdomEntry({
+        title: want ? "Evento de Pánico" : "Reanudación tras Pánico",
+        blocks: [
+          want ? `Evento de Pánico detectado: ${String(reason ?? "manual").trim() || "manual"}` : "Bot reactivado: reanudando operaciones.",
+          want ? "Acción: Standby activado. No abrir nuevas operaciones." : "Acción: Standby desactivado."
+        ],
+        meta: { category: "RISK", reason: String(reason ?? ""), by: String(by ?? "") }
+      });
+    } catch {
+    }
+  }
+
+  async function closeAllPaperPositions({ reason, chatId } = {}) {
+    const posAll = await listPaperPositions();
+    const positions = Array.isArray(posAll) ? posAll : [];
+    const filtered = Number.isFinite(Number(chatId)) ? positions.filter((p) => Number(p?.chatId) === Number(chatId)) : positions;
+    let closedCount = 0;
+    let failedCount = 0;
+    for (const p of filtered) {
+      try {
+        const last = await fetchLastPrice({ exchange: p.exchange, symbol: p.symbol });
+        const px = Number(last?.price);
+        if (!Number.isFinite(px)) throw new Error("Precio no disponible");
+        await closePaperPosition({ id: p.id, exitPrice: px, reason: String(reason ?? "PANIC") });
+        closedCount += 1;
+      } catch {
+        failedCount += 1;
+      }
+    }
+    return { closedCount, failedCount, total: filtered.length };
+  }
+
+  async function maybeSendChart(chatId, signal, candles) {
+    const enabled = !["0", "false", "off", "no"].includes(
+      String(process.env.TELEGRAM_CHART_ENABLED ?? process.env.CHART_ENABLED ?? "1").trim().toLowerCase()
+    );
+    if (!enabled) return;
+    const id = Number(chatId);
+    if (!Number.isFinite(id)) return;
+    const url = buildSignalChartUrl({ signal, candles });
+    if (!url) return;
+    try {
+      await bot.telegram.sendPhoto(id, url);
     } catch {
     }
   }
@@ -407,8 +502,84 @@ async function main() {
     return ((vNow / vPrev) - 1) * 100;
   }
 
+  function computePaperRemainingPct(signal) {
+    const allocEnabled = !["0", "false", "off", "no"].includes(
+      String(process.env.PAPER_ALLOC_ENABLED ?? "1").trim().toLowerCase()
+    );
+    if (!allocEnabled) return 100;
+    const allocMin = Number.isFinite(Number(process.env.PAPER_ALLOC_MIN_PCT))
+      ? Math.max(1, Math.min(100, Math.floor(Number(process.env.PAPER_ALLOC_MIN_PCT))))
+      : 10;
+    const allocMax = Number.isFinite(Number(process.env.PAPER_ALLOC_MAX_PCT))
+      ? Math.max(1, Math.min(100, Math.floor(Number(process.env.PAPER_ALLOC_MAX_PCT))))
+      : 40;
+    const allocBase = Number.isFinite(Number(process.env.PAPER_ALLOC_BASE_PCT))
+      ? Math.max(1, Math.min(100, Math.floor(Number(process.env.PAPER_ALLOC_BASE_PCT))))
+      : 25;
+    const conf = Number(signal?.model?.confidence);
+    const confFactor = Number.isFinite(conf) ? Math.max(0.6, Math.min(1.4, 0.7 + conf)) : 1;
+    const entry = Number(signal?.entry);
+    const sl = Number(signal?.sl);
+    const maxRiskPct = Number.isFinite(Number(process.env.GUARD_MAX_RISK_PCT))
+      ? Math.max(0.05, Math.min(20, Number(process.env.GUARD_MAX_RISK_PCT)))
+      : 1;
+    const riskPct =
+      Number.isFinite(entry) && entry > 0 && Number.isFinite(sl) ? (Math.abs(entry - sl) / entry) * 100 : null;
+    const riskFactor =
+      Number.isFinite(riskPct) && Number.isFinite(maxRiskPct) && maxRiskPct > 0
+        ? Math.max(0.5, Math.min(1, 1 - Math.max(0, riskPct / maxRiskPct - 0.6) * 0.6))
+        : 1;
+    const base = Math.round(allocBase * confFactor * riskFactor);
+    return Math.max(allocMin, Math.min(allocMax, base));
+  }
+
+  async function computePaperAllocationDecision(chatId, signal) {
+    const desired = computePaperRemainingPct(signal);
+    const sectorAdj = await ajustarAsignacionPorSector({ chatId, signal, desiredPct: desired });
+    if (sectorAdj?.enabled && sectorAdj.allow === false) {
+      return { allow: false, remainingPct: 0, reason: sectorAdj.reason || "Saturación de sector" };
+    }
+    let remainingPct = Number.isFinite(Number(sectorAdj?.remainingPct)) ? Number(sectorAdj.remainingPct) : desired;
+    const betaEnabled = !["0", "false", "off", "no"].includes(
+      String(process.env.PAPER_BETA_EXPOSURE_ENABLED ?? "1").trim().toLowerCase()
+    );
+    const base = String(signal?.symbol ?? "").trim().toUpperCase();
+    if (betaEnabled && base && !base.startsWith("BTC")) {
+      try {
+        const win = Number.isFinite(Number(process.env.BTC_CORR_WINDOW))
+          ? Math.max(30, Math.min(300, Math.floor(Number(process.env.BTC_CORR_WINDOW))))
+          : 50;
+        const stats = await computeBtcCorrelationBeta({
+          exchange: signal?.exchange,
+          symbol: signal?.symbol,
+          timeframe: signal?.timeframe,
+          window: win
+        });
+        const beta = Number(stats?.beta);
+        const pow = Number.isFinite(Number(process.env.PAPER_BETA_POWER))
+          ? Math.max(0.1, Math.min(3, Number(process.env.PAPER_BETA_POWER)))
+          : 0.7;
+        const minF = Number.isFinite(Number(process.env.PAPER_BETA_MIN_FACTOR))
+          ? Math.max(0.05, Math.min(1, Number(process.env.PAPER_BETA_MIN_FACTOR)))
+          : 0.35;
+        if (Number.isFinite(beta) && Math.abs(beta) > 1) {
+          const factor = Math.max(minF, Math.min(1, 1 / Math.pow(Math.abs(beta), pow)));
+          remainingPct = Math.max(1, Math.floor(remainingPct * factor));
+        }
+      } catch {
+      }
+    }
+    const sector = detectarSectorDeMoneda(signal?.symbol);
+    const reason = sectorAdj?.reason ? `${sectorAdj.reason}` : null;
+    return { allow: true, remainingPct, sector, note: reason };
+  }
+
   async function maybeOpenPaper(ctx, signal, data, source) {
     if (!paperEnabled) return null;
+    if (botStandby) {
+      await ctx.reply("🛑 Bot en STANDBY (panic mode). Usa /resume_bot para reactivar.");
+      return null;
+    }
     if (!signal || signal.side === "NEUTRAL") return null;
     const market = String(signal.exchange ?? "").includes("usdm") ? "futures" : "spot";
 
@@ -601,6 +772,65 @@ async function main() {
       );
       return null;
     }
+
+    const guard = await evaluarGuardiaDeEntrada({ chatId: ctx.chat?.id, signal, candles: data?.candles });
+    if (guard?.enabled && guard.allow === false) {
+      const reasons = Array.isArray(guard.reasons) ? guard.reasons : [];
+      const plan = guard?.metrics?.riskGateNextStepCondition && typeof guard.metrics.riskGateNextStepCondition === "object"
+        ? guard.metrics.riskGateNextStepCondition
+        : null;
+      const target = guard?.metrics?.riskGateTargetEntryAdjustment && typeof guard.metrics.riskGateTargetEntryAdjustment === "object"
+        ? guard.metrics.riskGateTargetEntryAdjustment
+        : null;
+      const planText = plan?.text ? String(plan.text).trim() : "";
+      const targetText = target?.text ? String(target.text).trim() : "";
+      const msg =
+        `🚫 ${notifyName}, NO.\nEsto es una mala operación y te voy a frenar.\n\nRazones:\n- ${reasons.join("\n- ")}` +
+        (planText ? `\n\n📌 PLAN DE CONFIRMACIÓN:\n${planText}` : "") +
+        (targetText ? `\n\n🎯 AJUSTE DE ENTRADA:\n${targetText}` : "");
+      if (plan && guard?.metrics?.riskGateAllow === false) {
+        await upsertRiskPlanFromGate({
+          chatId: ctx.chat?.id ?? ctx.from?.id,
+          signal,
+          gate: {
+            nextStepCondition: plan,
+            targetEntryAdjustment: target,
+            retry: { maxCandles: guard?.metrics?.riskGateRetryMaxCandles }
+          }
+        });
+      }
+      await recordErrorPattern({
+        type: "guard_block",
+        exchange: signal.exchange,
+        market,
+        symbol: signal.symbol,
+        timeframe: signal.timeframe,
+        side: signal.side,
+        reason: "GUARD_BLOCK",
+        notes: reasons.join(" | "),
+        features: {
+          confidence: Number(signal?.model?.confidence),
+          entry: Number(signal.entry),
+          sl: Number(signal.sl),
+          tp: Number(signal.tp2 ?? signal.tp),
+          trapScore: Number(guard?.metrics?.trapScore ?? 0)
+        }
+      });
+      await ctx.reply(msg);
+      logAprendizaje("Guardia crítico: entrada bloqueada", msg);
+      logObsidian(
+        [
+          "## 🧠 Guardia Crítico: entrada bloqueada",
+          "",
+          `Símbolo: ${signal.symbol} TF ${signal.timeframe} (${signal.exchange})`,
+          `Razones: ${reasons.join(" | ")}`,
+          "Decisión: NO operar. Requiere mejor RR/confianza o confirmación real.",
+          ""
+        ].join("\n")
+      );
+      await notifyAdmin(msg);
+      return null;
+    }
     const existing = (await listPaperPositions()).filter((p) => p.chatId === ctx.chat?.id);
     if (existing.length >= paperMaxOpen) {
       await ctx.reply(`Paper: límite de posiciones abiertas alcanzado (${paperMaxOpen}).`);
@@ -609,6 +839,15 @@ async function main() {
         `Decisión: se bloqueó apertura porque ya hay ${existing.length}/${paperMaxOpen} posiciones abiertas para chatId=${ctx.chat?.id}.`
       );
       return null;
+    }
+    const alloc = await computePaperAllocationDecision(ctx.chat?.id, signal);
+    if (!alloc.allow) {
+      await ctx.reply(`Paper: entrada bloqueada.\nMotivo: ${alloc.reason}`);
+      return null;
+    }
+    const sizingFactor = Number(guard?.metrics?.riskGateSizingFactor);
+    if (Number.isFinite(sizingFactor) && sizingFactor > 0 && sizingFactor < 1) {
+      alloc.remainingPct = Math.max(1, Math.floor(Number(alloc.remainingPct) * Math.max(0.1, Math.min(1, sizingFactor))));
     }
     const pos = await openPaperPosition({
       chatId: ctx.chat?.id,
@@ -621,6 +860,7 @@ async function main() {
       tp: signal.tp,
       tp1: signal.tp1,
       tp2: signal.tp2,
+      remainingPct: alloc.remainingPct,
       strategyName: signal.model?.strategyName ?? null,
       strategyReason: signal.model?.strategyReason ?? null,
       source
@@ -700,6 +940,18 @@ async function main() {
             30_000,
             Math.floor(Number(process.env.PAPER_TRAIL_NOTIFY_COOLDOWN_MS ?? 10 * 60 * 1000))
           );
+          const atrTrailEnabled = !["0", "false", "off", "no"].includes(
+            String(process.env.PAPER_ATR_TRAIL_ENABLED ?? "0").trim().toLowerCase()
+          );
+          const atrTrailMult = Number.isFinite(Number(process.env.PAPER_ATR_TRAIL_MULT))
+            ? Math.max(0.5, Math.min(10, Number(process.env.PAPER_ATR_TRAIL_MULT)))
+            : 3;
+          const atrTrailRefreshSeconds = Number.isFinite(Number(process.env.PAPER_ATR_TRAIL_REFRESH_SECONDS))
+            ? Math.max(10, Math.min(3600, Math.floor(Number(process.env.PAPER_ATR_TRAIL_REFRESH_SECONDS))))
+            : 60;
+          const atrTrailStartPct = Number.isFinite(Number(process.env.PAPER_ATR_TRAIL_START_PCT))
+            ? Math.max(0, Math.min(0.2, Number(process.env.PAPER_ATR_TRAIL_START_PCT)))
+            : paperTrailStartPct;
 
           if (paperTrailingEnabled && Number.isFinite(entryPrice) && entryPrice > 0 && Number.isFinite(price)) {
             let nextSl = sl;
@@ -732,6 +984,51 @@ async function main() {
                 if (!Number.isFinite(nextSl) || candidate < nextSl) {
                   nextSl = candidate;
                   didTrail = true;
+                }
+              }
+            }
+
+            if (atrTrailEnabled) {
+              const startOk =
+                pos.side === "LONG"
+                  ? price >= entryPrice * (1 + atrTrailStartPct)
+                  : pos.side === "SHORT"
+                    ? price <= entryPrice * (1 - atrTrailStartPct)
+                    : false;
+              if (startOk) {
+                let atrVal = Number(pos.atrTrailValue);
+                const lastCalc = Number(pos.atrTrailCalcAt ?? 0);
+                const needRefresh =
+                  !Number.isFinite(atrVal) ||
+                  !Number.isFinite(lastCalc) ||
+                  Date.now() - lastCalc >= atrTrailRefreshSeconds * 1000;
+                if (needRefresh) {
+                  try {
+                    const dataTf = await fetchCandles({ exchange: pos.exchange, symbol: pos.symbol, timeframe: pos.timeframe });
+                    const sigTf = await buildSignal(dataTf);
+                    atrVal = Number(sigTf?.indicators?.atr);
+                    if (Number.isFinite(atrVal) && atrVal > 0) {
+                      await updatePaperPosition({ id: pos.id, patch: { atrTrailValue: atrVal, atrTrailCalcAt: Date.now() } });
+                    }
+                  } catch {
+                  }
+                }
+                if (Number.isFinite(atrVal) && atrVal > 0) {
+                  const dist = atrVal * atrTrailMult;
+                  const candidate = pos.side === "LONG" ? price - dist : pos.side === "SHORT" ? price + dist : null;
+                  if (Number.isFinite(candidate)) {
+                    if (pos.side === "LONG") {
+                      if (!Number.isFinite(nextSl) || candidate > nextSl) {
+                        nextSl = candidate;
+                        didTrail = true;
+                      }
+                    } else if (pos.side === "SHORT") {
+                      if (!Number.isFinite(nextSl) || candidate < nextSl) {
+                        nextSl = candidate;
+                        didTrail = true;
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -789,6 +1086,63 @@ async function main() {
               `Decisión de salida: ${hit}. entry=${closed.entry} exit=${closed.exit} sl=${closed.sl} tp=${closed.tp} side=${closed.side} r=${closed.r} exchange=${closed.exchange} chatId=${closed.chatId}.`
             );
             registrarEnHistorial(closed, hit, price).catch(() => {});
+            try {
+              const enabled = !["0", "false", "off", "no"].includes(
+                String(process.env.ACTIVE_FEEDBACK_ENABLED ?? "1").trim().toLowerCase()
+              );
+              const apiKey = process.env.DEEPSEEK_KEY || process.env.DEEPSEEK_API_KEY || null;
+              if (enabled && apiKey) {
+                const data = await fetchCandles({ exchange: closed.exchange, symbol: closed.symbol, timeframe: closed.timeframe });
+                const sig = await buildSignal(data);
+                const sector = detectarSectorDeMoneda(closed.symbol);
+                const cycle = getCryptoCycleContext(new Date());
+                let btcStats = null;
+                try {
+                  const base = String(closed.symbol ?? "").toUpperCase();
+                  if (base && !base.startsWith("BTC")) {
+                    btcStats = await computeBtcCorrelationBeta({
+                      exchange: closed.exchange,
+                      symbol: closed.symbol,
+                      timeframe: closed.timeframe,
+                      window: Number.isFinite(Number(process.env.BTC_CORR_WINDOW)) ? Number(process.env.BTC_CORR_WINDOW) : 50
+                    });
+                  }
+                } catch {
+                  btcStats = null;
+                }
+                let whale = null;
+                try {
+                  whale = await getWhalePressure({ exchange: closed.exchange, symbol: closed.symbol });
+                } catch {
+                  whale = null;
+                }
+                let anom = null;
+                try {
+                  anom = await detectVolumeAnomaly({ exchange: closed.exchange, symbol: closed.symbol, timeframe: closed.timeframe, lookback: 24 });
+                } catch {
+                  anom = null;
+                }
+                await learnFromTradeWithDeepseek({
+                  apiKey,
+                  trade: closed,
+                  signal: sig,
+                  context: {
+                    sector,
+                    cycle,
+                    btc: btcStats?.ok ? { correlation: btcStats.correlation, beta: btcStats.beta, volToBtc: btcStats.volToBtc } : null,
+                    whale: whale?.ok ? { buyWall: whale.buyWall, sellWall: whale.sellWall, spoofing: whale.spoofing } : null,
+                    volume: anom?.ok
+                      ? { zScore: anom.zScore, absorption: anom.absorption, lowConviction: anom.lowConviction, wickRatio: anom.wickRatio }
+                      : null
+                  }
+                });
+              }
+            } catch (e) {
+              logAprendizaje(
+                `Active Feedback: fallo analizando trade ${closed?.symbol ?? ""}`,
+                `Se capturó el error para no romper el bot.\n\nDetalle técnico:\n${e?.stack ?? e?.message ?? String(e)}`
+              );
+            }
             if (closed && Number.isFinite(Number(closed.r)) && Number(closed.r) < 0) {
               try {
                 const data = await fetchCandles({ exchange: closed.exchange, symbol: closed.symbol, timeframe: closed.timeframe });
@@ -799,6 +1153,19 @@ async function main() {
                 const vols = candles.slice(-20).map((c) => Number(c?.[5])).filter((v) => Number.isFinite(v) && v > 0);
                 const avgVol = vols.length ? vols.reduce((a, b) => a + b, 0) / vols.length : null;
                 const volRatio = Number.isFinite(lastVol) && Number.isFinite(avgVol) && avgVol > 0 ? lastVol / avgVol : null;
+                const adx = computeAdxValueFromCandles(candles, 14);
+                const sector = detectarSectorDeMoneda(closed.symbol);
+                const cycle = getCryptoCycleContext(new Date());
+                let news = null;
+                try {
+                  news = await fetchNewsSnapshot({ maxTitles: 10 });
+                } catch {
+                  news = null;
+                }
+                const s = news?.sentiment && typeof news.sentiment === "object" ? news.sentiment : null;
+                const sentimentScore = s && Number.isFinite(Number(s.score)) ? Number(s.score) : null;
+                const sentimentLabel = s && s.label ? String(s.label) : "";
+                const headlines = Array.isArray(news?.headlines) ? news.headlines.slice(0, 10) : [];
                 if (hit === "SL" && closed.chatId) {
                   try {
                     const entryPx = Number(closed.entry);
@@ -815,15 +1182,24 @@ async function main() {
                       contexto: {
                         rsi: Number(sig.indicators?.rsi),
                         atr: Number(sig.indicators?.atr),
+                        adx,
                         volRatio,
-                        hour: new Date().getHours()
+                        hour: new Date().getHours(),
+                        sector,
+                        sentiment: sentimentScore === null ? null : { score: sentimentScore, label: sentimentLabel },
+                        headlines,
+                        cycle
                       }
                     });
                     if (critique?.enabled && critique?.ok) {
                       const msg = [
-                        "<b>❌ TRADE FALLIDO: POST-MORTEM PSICOLÓGICO</b>",
+                        "<b>📉 AUTOPSIA DE TRADE (POST-MORTEM)</b>",
                         "━━━━━━━━━━━━━━━━━━",
                         `<b>${escapeHtml(closed.symbol)}</b> <code>${escapeHtml(closed.timeframe)}</code> <code>${escapeHtml(closed.side)}</code>`,
+                        "",
+                        `<b>Sector:</b> <code>${escapeHtml(sector)}</code>`,
+                        sentimentScore === null ? "" : `<b>Sentimiento:</b> <code>${escapeHtml(String(Math.round(sentimentScore)))}/100 ${escapeHtml(sentimentLabel)}</code>`,
+                        `<b>Ciclo:</b> <code>${escapeHtml(String(cycle?.btcHalving?.phase ?? "UNKNOWN"))}</code>`,
                         "",
                         `<b>¿Qué pasó?</b> ${escapeHtml(critique.que_paso || "N/A")}`,
                         "",
@@ -856,6 +1232,9 @@ async function main() {
                   features: {
                     rsi: Number(sig.indicators?.rsi),
                     atr: Number(sig.indicators?.atr),
+                    adx: Number(adx),
+                    sector,
+                    sentimentScore: Number(sentimentScore),
                     volRatio: Number(volRatio),
                     volume: Number(lastVol),
                     price: Number(sig.entry),
@@ -922,12 +1301,16 @@ async function main() {
 
   async function runAlertsOnce() {
     if (alertsRunning) return;
+    if (botStandby) return;
     alertsRunning = true;
     try {
       const mem = await loadMemory();
       const alerts = mem.config?.alerts && typeof mem.config.alerts === "object" ? mem.config.alerts : {};
       const apiKey = process.env.DEEPSEEK_KEY || process.env.DEEPSEEK_API_KEY || null;
       const now = Date.now();
+      const aiMinConf = Number.isFinite(Number(process.env.ALERTS_AI_MIN_CONFIDENCE))
+        ? Math.max(0, Math.min(100, Math.floor(Number(process.env.ALERTS_AI_MIN_CONFIDENCE))))
+        : 75;
 
       for (const [chatId, cfgRaw] of Object.entries(alerts)) {
         const cfg = cfgRaw && typeof cfgRaw === "object" ? cfgRaw : null;
@@ -964,24 +1347,43 @@ async function main() {
         const lastSentAt = Number(cfg.lastSentAt ?? 0);
         if (cfg.lastSentKey === key && Number.isFinite(lastSentAt) && now - lastSentAt < cooldownMs) continue;
 
-        let message = null;
-        if (apiKey) {
-          try {
-            const data = await fetchCandles({ exchange, symbol: top.symbol, timeframe });
-            const ai = await buildAiTradeIdea({ ...data, apiKey });
-            message = formatAiMessage(ai);
-          } catch {
-            logAprendizaje(
-              `Alertas: fallo AI para ${top.symbol} ${timeframe} (${exchange} ${market})`,
-              "Mitigación: se usó fallback a señal base (formatSignalMessage) para no perder la alerta."
-            );
-            message = formatSignalMessage(top);
-          }
-        } else {
-          message = formatSignalMessage(top);
+        if (!apiKey) continue;
+        let data = null;
+        let signal = null;
+        try {
+          data = await fetchCandles({ exchange, symbol: top.symbol, timeframe });
+          signal = await buildSignal(data);
+        } catch {
+          continue;
         }
 
-        await bot.telegram.sendMessage(chatId, message);
+        const guard = await evaluarGuardiaDeEntrada({ chatId: Number(chatId), signal, candles: data?.candles });
+        if (!guard?.allow) {
+          if (guard?.metrics?.riskGateEnabled === null) {
+            try {
+              await incrementAiStats({ avoided: 1 });
+            } catch {
+            }
+          }
+          continue;
+        }
+        const gateAllow = guard?.metrics?.riskGateAllow;
+        const gateVerdict = String(guard?.metrics?.riskGateVerdict ?? "").trim().toUpperCase();
+        const gateConf = Number(guard?.metrics?.riskGateConfidence);
+        if (gateAllow !== true) continue;
+        if (gateVerdict && gateVerdict !== "ENTRAR") continue;
+        if (!Number.isFinite(gateConf) || gateConf < aiMinConf) continue;
+
+        const toolsUsed = Array.isArray(guard?.metrics?.riskGateToolsUsed) ? guard.metrics.riskGateToolsUsed : [];
+        const toolTxt = toolsUsed.length ? ` | tools: ${toolsUsed.join(", ")}` : "";
+        const msg = [
+          "🚨 ALERTA ALTA CONVICCIÓN",
+          `${String(signal.symbol)} ${String(signal.timeframe)} ${String(signal.side)}`.trim(),
+          `Entrada: ${fmt(signal.entry)} | SL: ${fmt(signal.sl)} | TP: ${fmt(signal.tp2 ?? signal.tp)}`,
+          `IA: ${Math.floor(gateConf)}/100${toolTxt}`
+        ].join("\n");
+
+        await bot.telegram.sendMessage(chatId, msg);
         await setAlertsConfig(chatId, { ...cfg, lastSentKey: key, lastSentAt: now });
       }
     } finally {
@@ -1007,6 +1409,7 @@ async function main() {
       "/alerts on 15m binanceusdm futures 0.6 10 300 USDT",
       "/balance",
       "/inspect",
+      "/savings",
       "/brain",
       "",
       "También puedes escribir:",
@@ -1028,8 +1431,460 @@ async function main() {
   });
 
   bot.command("inspect", async (ctx) => {
+    const text = ctx.message?.text ?? "";
+    const args = text.replace(/^\/inspect(@\w+)?/i, "").trim().toLowerCase();
+    if (args === "errors" || args === "errores") {
+      const mem = await loadErrorMemory();
+      await replyHtmlCode(ctx, JSON.stringify(mem, null, 2));
+      return;
+    }
+    if (args === "history" || args === "historial") {
+      const h = await loadTradeHistory();
+      await replyHtmlCode(ctx, JSON.stringify({ path: h.path, items: h.items }, null, 2));
+      return;
+    }
     const mem = await loadMemory();
     await replyHtmlCode(ctx, JSON.stringify(mem, null, 2));
+  });
+
+  bot.command("savings", async (ctx) => {
+    try {
+      await ctx.replyWithChatAction("typing");
+      try {
+        await incrementAiStats({ force: true });
+      } catch {
+      }
+      const mem = await loadMemory();
+      const s = mem.config?.aiStats && typeof mem.config.aiStats === "object" ? mem.config.aiStats : {};
+      const calls = Math.max(0, Math.floor(Number(s.dayCalls ?? s.calls) || 0));
+      const avoided = Math.max(0, Math.floor(Number(s.dayAvoided ?? s.avoided) || 0));
+      const tokensIn = Math.max(0, Math.floor(Number(s.dayTokensIn ?? s.tokensIn) || 0));
+      const tokensOut = Math.max(0, Math.floor(Number(s.dayTokensOut ?? s.tokensOut) || 0));
+      const usdSpent = Number.isFinite(Number(s.dayUsdSpent ?? s.usdSpent)) ? Number(s.dayUsdSpent ?? s.usdSpent) : 0;
+      const total = calls + avoided;
+      const efficiencyPct = total > 0 ? (avoided / total) * 100 : 0;
+      const avgIn = calls > 0 ? tokensIn / calls : 0;
+      const avgOut = calls > 0 ? tokensOut / calls : 0;
+      const estTokensInNoFilters = Math.round((calls + avoided) * avgIn);
+      const estTokensOutNoFilters = Math.round((calls + avoided) * avgOut);
+      const inPrice = Number.isFinite(Number(process.env.AI_PRICE_INPUT_1M)) ? Math.max(0, Number(process.env.AI_PRICE_INPUT_1M)) : 0;
+      const outPrice = Number.isFinite(Number(process.env.AI_PRICE_OUTPUT_1M)) ? Math.max(0, Number(process.env.AI_PRICE_OUTPUT_1M)) : 0;
+      const estUsdNoFilters = (estTokensInNoFilters / 1_000_000) * inPrice + (estTokensOutNoFilters / 1_000_000) * outPrice;
+      const savedUsd = Math.max(0, estUsdNoFilters - usdSpent);
+      const lines = [];
+      lines.push("💰 REPORTE DE EFICIENCIA FINANCIERA");
+      lines.push("━━━━━━━━━━━━━━━━━━");
+      if (s.day) lines.push(`Día: ${String(s.day)}`);
+      lines.push(`Llamadas IA Realizadas: ${calls}`);
+      lines.push(`Llamadas IA Evitadas: ${avoided} (Caché/Filtros)`);
+      lines.push(`Tokens Consumidos: ${tokensIn} (In) / ${tokensOut} (Out)`);
+      lines.push(`Precio: $${inPrice}/$${outPrice} por 1M tokens (In/Out)`);
+      lines.push(`Gasto Real hoy: $${usdSpent.toFixed(4)} USD`);
+      lines.push(`Gasto estimado sin filtros: $${estUsdNoFilters.toFixed(4)} USD`);
+      lines.push(`Ahorro estimado: $${savedUsd.toFixed(4)} USD`);
+      lines.push(`Eficiencia de Tokens: ${efficiencyPct.toFixed(1)}%`);
+      if (s.updatedAt) lines.push(`Actualizado: ${String(s.updatedAt)}`);
+      await ctx.reply(lines.join("\n"));
+    } catch (e) {
+      await ctx.reply(`savings: error (${e?.message ?? String(e)})`);
+    }
+  });
+
+  bot.command("news", async (ctx) => {
+    try {
+      await ctx.replyWithChatAction("typing");
+      const data = await fetchNewsSnapshot({ maxTitles: 10 });
+      const titles = Array.isArray(data?.headlines) ? data.headlines : [];
+      const ts = String(data?.ts ?? "").trim();
+      const s = data?.sentiment && typeof data.sentiment === "object" ? data.sentiment : null;
+      const score = s && Number.isFinite(Number(s.score)) ? Number(s.score) : null;
+      const label = s && s.label ? String(s.label) : "";
+      if (!titles.length) {
+        const sentLine = score === null ? "" : ` Sentimiento: ${score}/100 ${label}`.trim();
+        await ctx.reply(`📰 Noticias: sin titulares por ahora.${ts ? ` (${ts})` : ""}${sentLine ? `\n${sentLine}` : ""}`);
+        return;
+      }
+      const lines = [];
+      lines.push(`📰 Noticias (${ts || "now"})`);
+      if (score !== null) lines.push(`📉 Sentimiento: ${score}/100 ${label}`.trim());
+      lines.push("");
+      for (const t of titles.slice(0, 12)) lines.push(`- ${String(t).slice(0, 220)}`);
+      await ctx.reply(lines.join("\n").slice(0, 3900));
+    } catch (e) {
+      await ctx.reply(`Noticias: error (${e?.message ?? String(e)})`);
+    }
+  });
+
+  function parseWisdomTs(entry) {
+    const txt = String(entry ?? "");
+    const m = txt.match(/^##\s+\[([^\]]+)\]/);
+    if (!m) return null;
+    const raw = String(m[1] ?? "").trim();
+    const iso = raw.includes("T") ? raw : raw.replace(" ", "T");
+    const ms = Date.parse(iso);
+    return Number.isFinite(ms) ? ms : null;
+  }
+
+  function fmtPct(n) {
+    return Number.isFinite(Number(n)) ? `${Math.round(Number(n))}%` : "N/A";
+  }
+
+  bot.command("show_wisdom", async (ctx) => {
+    try {
+      await ctx.replyWithChatAction("typing");
+      const hours = 24;
+      const since = Date.now() - hours * 60 * 60 * 1000;
+      const all = await readWisdomEntriesAll();
+      const entries = Array.isArray(all.entries) ? all.entries : [];
+      const recent = entries
+        .map((e) => ({ e, ts: parseWisdomTs(e) }))
+        .filter((x) => Number.isFinite(x.ts) && x.ts >= since)
+        .slice(-20)
+        .reverse();
+      if (!recent.length) {
+        await ctx.reply(`🧠 Wisdom: no hay lecciones en las últimas ${hours}h.`);
+        return;
+      }
+      const lines = [];
+      lines.push(`🧠 LECCIONES ÚLTIMAS ${hours}H (${recent.length})`);
+      lines.push("━━━━━━━━━━━━━━━━━━");
+      for (const it of recent) {
+        const raw = String(it.e ?? "").trim();
+        const head = raw.split("\n")[0] ?? "";
+        const ruleLine =
+          raw
+            .split("\n")
+            .map((s) => s.trim())
+            .find((s) => /^Regla:\s*/i.test(s) || /^Lección de Oro:\s*/i.test(s) || /^Lección:\s*/i.test(s)) ?? "";
+        lines.push(head.replace(/^##\s*/, ""));
+        if (ruleLine) lines.push(ruleLine.slice(0, 240));
+        lines.push("");
+      }
+      await ctx.reply(lines.join("\n").slice(0, 3900));
+    } catch (e) {
+      await ctx.reply(`show_wisdom: error (${e?.message ?? String(e)})`);
+    }
+  });
+
+  bot.command("status_pro", async (ctx) => {
+    try {
+      await ctx.replyWithChatAction("typing");
+      const chatId = Number(ctx.chat?.id);
+      const cycle = getCryptoCycleContext(new Date());
+      const phase = String(cycle?.btcHalving?.phase ?? "UNKNOWN");
+
+      const posAll = await listPaperPositions();
+      const positions = Array.isArray(posAll) ? posAll.filter((p) => Number(p?.chatId) === chatId) : [];
+      const plansStore = await loadRiskPlans();
+      const plans = Array.isArray(plansStore.plans) ? plansStore.plans.filter((p) => Number(p?.chatId) === chatId) : [];
+
+      const exposures = await getSectorExposurePct({ chatId, positions });
+      const bySector = exposures?.bySector && typeof exposures.bySector === "object" ? exposures.bySector : {};
+      const maxSector = Number.isFinite(Number(process.env.MAX_SECTOR_EXPOSURE_PCT))
+        ? Math.max(1, Math.min(100, Math.floor(Number(process.env.MAX_SECTOR_EXPOSURE_PCT))))
+        : 60;
+      const topSectors = Object.entries(bySector)
+        .map(([k, v]) => ({ k, v: Number(v) }))
+        .filter((x) => Number.isFinite(x.v) && x.v > 0)
+        .sort((a, b) => b.v - a.v)
+        .slice(0, 5);
+
+      const candidates = positions.filter((p) => String(p?.symbol ?? "").toUpperCase().includes("BTC") === false).slice(0, 2);
+      const baseEx = String(candidates?.[0]?.exchange ?? "binanceusdm");
+      const refSym = String(candidates?.[0]?.symbol ?? "ETH/USDT");
+      const refTf = String(candidates?.[0]?.timeframe ?? "15m");
+      let btcStats = null;
+      try {
+        btcStats = await computeBtcCorrelationBeta({ exchange: baseEx, symbol: refSym, timeframe: refTf, window: 50 });
+      } catch {
+        btcStats = null;
+      }
+
+      const anomalySymbols = [];
+      for (const p of positions.slice(0, 4)) {
+        try {
+          const a = await detectVolumeAnomaly({ exchange: p.exchange, symbol: p.symbol, timeframe: p.timeframe, lookback: 24 });
+          if (a?.enabled && a.ok && (Number(a.zScore) >= 2.5 || a.absorption === true)) {
+            anomalySymbols.push(
+              `${String(p.symbol)} (${p.timeframe}) ${Number.isFinite(Number(a.zScore)) ? `z=${Number(a.zScore).toFixed(1)}σ` : ""}${a.absorption ? " absorción" : ""}`.trim()
+            );
+          }
+        } catch {
+        }
+      }
+
+      const whaleAlerts = [];
+      for (const p of positions.slice(0, 3)) {
+        try {
+          const w = await getWhalePressure({ exchange: p.exchange, symbol: p.symbol });
+          if (w?.enabled && w.ok) {
+            if (w.spoofing) whaleAlerts.push(`${String(p.symbol)} spoofing=${String(w.spoofing)}`);
+            else if (w.sellWall === true) whaleAlerts.push(`${String(p.symbol)} sellWall x${Number(w.sellWallRatio).toFixed(1)}`);
+            else if (w.buyWall === true) whaleAlerts.push(`${String(p.symbol)} buyWall x${Number(w.buyWallRatio).toFixed(1)}`);
+          }
+        } catch {
+        }
+      }
+
+      const atrTrailEnabled = !["0", "false", "off", "no"].includes(
+        String(process.env.PAPER_ATR_TRAIL_ENABLED ?? "0").trim().toLowerCase()
+      );
+      const atrCount = atrTrailEnabled
+        ? positions.filter((p) => Number.isFinite(Number(p?.atrTrailValue)) || Number.isFinite(Number(p?.trailLastAt))).length
+        : 0;
+      const wisdomGuardEnabled = !["0", "false", "off", "no"].includes(
+        String(process.env.WISDOM_GUARD_ENABLED ?? "1").trim().toLowerCase()
+      );
+
+      const lines = [];
+      lines.push(`🚀 PRO-DASHBOARD [${notifyName}]`);
+      lines.push(`🌐 MACRO: Fase ${phase} | ${String(cycle?.year ?? "")} ${String(cycle?.quarter ?? "")}`.trim());
+      lines.push(`🛑 STANDBY: ${botStandby ? "ON" : "OFF"}`);
+      lines.push(`📌 PLANES: ${plans.length} | POSICIONES: ${positions.length}`);
+      lines.push("");
+      lines.push("⛓️ SECTORES:");
+      if (!topSectors.length) lines.push("- sin exposición");
+      for (const s of topSectors) {
+        const ok = s.v <= maxSector ? "✅" : "⚠️";
+        lines.push(`- ${s.k}: ${fmtPct(s.v)} (Límite ${maxSector}%) ${ok}`);
+      }
+      lines.push("");
+      if (btcStats?.ok && Number.isFinite(Number(btcStats.correlation))) {
+        const corr = Number(btcStats.correlation);
+        const beta = Number(btcStats.beta);
+        const flag = corr >= 0.85 ? "⚠️" : corr <= 0.5 ? "✅" : "•";
+        lines.push(`📊 CORRELACIÓN BTC: ${corr.toFixed(2)} (Beta: ${Number.isFinite(beta) ? beta.toFixed(2) : "N/A"}) ${flag}`);
+      } else {
+        lines.push("📊 CORRELACIÓN BTC: N/A");
+      }
+      lines.push("");
+      lines.push(`📈 ANOMALÍAS: ${anomalySymbols.length ? anomalySymbols.join(" | ") : "sin detecciones"}`);
+      lines.push(`🐋 WHALE TRACKER: ${whaleAlerts.length ? whaleAlerts.join(" | ") : "sin alertas"}`);
+      lines.push("");
+      lines.push(`🛡️ RIESGO: Trailing ATR ${atrTrailEnabled ? `ON (${atrCount})` : "OFF"} | Wisdom Guard ${wisdomGuardEnabled ? "ON" : "OFF"}`);
+      await ctx.reply(lines.join("\n").slice(0, 3900));
+    } catch (e) {
+      await ctx.reply(`status_pro: error (${e?.message ?? String(e)})`);
+    }
+  });
+
+  bot.command("panic_stop", async (ctx) => {
+    try {
+      await ctx.replyWithChatAction("typing");
+      const chatId = Number(ctx.chat?.id);
+      const canPanic = !Number.isFinite(adminChatId) || chatId === adminChatId;
+      if (!canPanic) {
+        await ctx.reply("panic_stop: sin permisos.");
+        return;
+      }
+      if (botStandby) {
+        await ctx.reply("🛑 Panic mode ya está activo (STANDBY).");
+        return;
+      }
+      const reason = "MANUAL_PANIC";
+      await setStandbyMode({ standby: true, reason, by: String(chatId) });
+      const closed = await closeAllPaperPositions({ reason: "PANIC" });
+      try {
+        await saveRiskPlans([]);
+      } catch {
+      }
+      const lines = [];
+      lines.push("🛑 PANIC STOP ACTIVADO");
+      lines.push("━━━━━━━━━━━━━━━━━━");
+      lines.push(`Acción: Standby ON`);
+      lines.push(`Paper cerradas: ${closed.closedCount}/${closed.total} (fallos ${closed.failedCount})`);
+      lines.push("Reactivación: /resume_bot");
+      await ctx.reply(lines.join("\n"));
+      await notifyAdmin(`🛑 PANIC STOP: Standby ON | cerradas ${closed.closedCount}/${closed.total}`);
+    } catch (e) {
+      await ctx.reply(`panic_stop: error (${e?.message ?? String(e)})`);
+    }
+  });
+
+  bot.command("resume_bot", async (ctx) => {
+    try {
+      await ctx.replyWithChatAction("typing");
+      const chatId = Number(ctx.chat?.id);
+      const canResume = !Number.isFinite(adminChatId) || chatId === adminChatId;
+      if (!canResume) {
+        await ctx.reply("resume_bot: sin permisos.");
+        return;
+      }
+      if (!botStandby) {
+        await ctx.reply("Bot ya está activo (no está en standby).");
+        return;
+      }
+      await setStandbyMode({ standby: false, reason: "MANUAL_RESUME", by: String(chatId) });
+      await ctx.reply("✅ Bot reactivado. Standby OFF.");
+      await notifyAdmin("✅ RESUME: Standby OFF");
+    } catch (e) {
+      await ctx.reply(`resume_bot: error (${e?.message ?? String(e)})`);
+    }
+  });
+
+  function timeframeToMs(tf) {
+    const s = String(tf ?? "").trim().toLowerCase();
+    const m = s.match(/^(\d+)\s*([mhdw])$/);
+    if (!m) return 15 * 60 * 1000;
+    const n = Math.max(1, Math.floor(Number(m[1])));
+    const u = m[2];
+    if (u === "m") return n * 60 * 1000;
+    if (u === "h") return n * 60 * 60 * 1000;
+    if (u === "d") return n * 24 * 60 * 60 * 1000;
+    if (u === "w") return n * 7 * 24 * 60 * 60 * 1000;
+    return 15 * 60 * 1000;
+  }
+
+  bot.command("plans", async (ctx) => {
+    try {
+      await ctx.replyWithChatAction("typing");
+      const store = await loadRiskPlans();
+      const plans = Array.isArray(store.plans) ? store.plans : [];
+      const chatId = Number(ctx.chat?.id);
+      const canSeeAll = Number.isFinite(adminChatId) && chatId === adminChatId;
+      const visible = canSeeAll ? plans : plans.filter((p) => Number(p?.chatId) === chatId);
+      if (!visible.length) {
+        await ctx.reply("📋 Planes: no hay planes activos.");
+        return;
+      }
+      const now = Date.now();
+      const lines = [];
+      lines.push(`📋 Planes activos: ${visible.length}`);
+      lines.push("");
+      for (const p of visible.slice(-20).reverse()) {
+        const id = String(p?.id ?? "");
+        const symbol = String(p?.symbol ?? "");
+        const tf = String(p?.timeframe ?? "");
+        const side = String(p?.side ?? "");
+        const exp = Number(p?.expiresAt);
+        const remainMs = Number.isFinite(exp) ? Math.max(0, exp - now) : 0;
+        const candlesLeft = tf ? Math.ceil(remainMs / timeframeToMs(tf)) : null;
+        const cond = p?.nextStepCondition && typeof p.nextStepCondition === "object" ? p.nextStepCondition : null;
+        const condText = cond?.text ? String(cond.text).trim() : "";
+        lines.push(`ID: ${id}`);
+        lines.push(`${symbol} ${tf} ${side}`.trim());
+        if (condText) lines.push(`Condición: ${condText}`);
+        if (candlesLeft !== null) lines.push(`Velas restantes: ${candlesLeft}`);
+        lines.push("");
+      }
+      await ctx.reply(lines.join("\n").slice(0, 3900));
+    } catch (e) {
+      await ctx.reply(`Planes: error (${e?.message ?? String(e)})`);
+    }
+  });
+
+  bot.command("cancelplan", async (ctx) => {
+    try {
+      const text = String(ctx.message?.text ?? "");
+      const id = text.replace(/^\/cancelplan(@\w+)?/i, "").trim();
+      if (!id) {
+        await ctx.reply("Uso: /cancelplan ID");
+        return;
+      }
+      const store = await loadRiskPlans();
+      const plans = Array.isArray(store.plans) ? store.plans : [];
+      const chatId = Number(ctx.chat?.id);
+      const canSeeAll = Number.isFinite(adminChatId) && chatId === adminChatId;
+      const before = plans.length;
+      const kept = plans.filter((p) => {
+        const sameId = String(p?.id ?? "") === id;
+        if (!sameId) return true;
+        if (canSeeAll) return false;
+        return Number(p?.chatId) !== chatId;
+      });
+      if (kept.length === before) {
+        await ctx.reply("Cancelación: no encontré ese plan (o no tienes permisos).");
+        return;
+      }
+      await saveRiskPlans(kept);
+      await ctx.reply(`✅ Plan cancelado: ${id}`);
+    } catch (e) {
+      await ctx.reply(`Cancelplan: error (${e?.message ?? String(e)})`);
+    }
+  });
+
+  bot.command("approve", async (ctx) => {
+    try {
+      await ctx.replyWithChatAction("typing");
+      const text = String(ctx.message?.text ?? "");
+      const id = text.replace(/^\/approve(@\w+)?/i, "").trim();
+      if (!id) {
+        await ctx.reply("Uso: /approve ID");
+        return;
+      }
+      const store = await loadRiskPlans();
+      const plans = Array.isArray(store.plans) ? store.plans : [];
+      const chatId = Number(ctx.chat?.id);
+      const canSeeAll = Number.isFinite(adminChatId) && chatId === adminChatId;
+      const plan = plans.find((p) => String(p?.id ?? "") === id);
+      if (!plan) {
+        await ctx.reply("Approve: no encontré ese plan.");
+        return;
+      }
+      if (!canSeeAll && Number(plan?.chatId) !== chatId) {
+        await ctx.reply("Approve: no tienes permisos para ese plan.");
+        return;
+      }
+      const exchange = String(plan?.exchange ?? "").trim();
+      const symbol = String(plan?.symbol ?? "").trim();
+      const timeframe = String(plan?.timeframe ?? "").trim().toLowerCase() || "15m";
+      const sidePlan = String(plan?.side ?? "").trim().toUpperCase();
+      if (!exchange || !symbol || !sidePlan) {
+        await ctx.reply("Approve: plan inválido (faltan datos).");
+        return;
+      }
+      const data = await fetchCandles({ exchange, symbol, timeframe });
+      const signal = await buildSignal(data);
+      if (String(signal?.side ?? "").toUpperCase() !== sidePlan) {
+        await ctx.reply(
+          `Approve: la señal cambió (${signal?.side ?? "N/A"}). No ejecuto para no forzar contra el modelo.`
+        );
+        return;
+      }
+      const tgt = plan?.targetEntryAdjustment && typeof plan.targetEntryAdjustment === "object" ? plan.targetEntryAdjustment : null;
+      const tgtMode = String(tgt?.mode ?? "").trim().toLowerCase();
+      const tgtPrice = Number(tgt?.price);
+      if (tgtMode === "limit" && Number.isFinite(tgtPrice) && tgtPrice > 0) signal.entry = tgtPrice;
+      const guard = await evaluarGuardiaDeEntrada({ chatId: ctx.chat?.id, signal, candles: data?.candles });
+      if (!guard?.allow) {
+        const reasons = Array.isArray(guard?.reasons) ? guard.reasons : [];
+        await ctx.reply(`Approve: sigo bloqueando.\n\nRazones:\n- ${reasons.join("\n- ")}`.slice(0, 3900));
+        return;
+      }
+      const existing = (await listPaperPositions()).filter((p) => p.chatId === plan.chatId);
+      if (existing.length >= paperMaxOpen) {
+        await ctx.reply(`Approve: límite de posiciones abiertas alcanzado (${paperMaxOpen}).`);
+        return;
+      }
+      const kept = plans.filter((p) => String(p?.id ?? "") !== id);
+      await saveRiskPlans(kept);
+      await ctx.reply(`✅ Approved. Ejecutando entrada (paper).`);
+      await maybeSendChart(plan.chatId, signal, data?.candles);
+      const alloc = await computePaperAllocationDecision(plan.chatId, signal);
+      if (!alloc.allow) {
+        await ctx.reply(`Approve: entrada bloqueada.\nMotivo: ${alloc.reason}`);
+        return;
+      }
+      const pos = await openPaperPosition({
+        chatId: plan.chatId,
+        exchange: signal.exchange,
+        symbol: signal.symbol,
+        timeframe: signal.timeframe,
+        side: signal.side,
+        entry: signal.entry,
+        sl: signal.sl,
+        tp: signal.tp,
+        tp1: signal.tp1,
+        tp2: signal.tp2,
+        remainingPct: alloc.remainingPct,
+        strategyName: signal.model?.strategyName ?? null,
+        strategyReason: "plan_approved",
+        source: "plan_approved"
+      });
+      await ctx.reply(formatPositionMessage(pos));
+    } catch (e) {
+      await ctx.reply(`Approve: error (${e?.message ?? String(e)})`);
+    }
   });
 
   bot.command("brain", async (ctx) => {
@@ -1595,6 +2450,15 @@ async function main() {
       const data = await fetchCandles(req);
       const ai = await buildAiTradeIdea({ ...data, apiKey });
       await ctx.reply(formatAiMessage(ai));
+      await maybeSendChart(ctx.chat?.id ?? ctx.from?.id, {
+        exchange: ai.exchange,
+        symbol: ai.symbol,
+        timeframe: ai.timeframe,
+        side: ai.accion === "COMPRA" ? "LONG" : ai.accion === "VENTA" ? "SHORT" : "NEUTRAL",
+        entry: ai.precio_entrada,
+        sl: ai.sl,
+        tp: ai.tp
+      }, data.candles);
       logAprendizaje(
         `AI: idea generada para ${req.symbol} ${req.timeframe} (${req.exchange})`,
         `Decisión estratégica: se generó idea con buildAiTradeIdea usando DeepSeek y contexto de velas. action=${ai?.action ?? "N/A"} confidence=${ai?.confidence ?? "N/A"}.`
@@ -1625,6 +2489,7 @@ async function main() {
       }
       const r = await handleOne(req);
       await ctx.reply(r.text);
+      await maybeSendChart(ctx.chat?.id ?? ctx.from?.id, r.signal, r.data?.candles);
       logAprendizaje(
         `Señal: ${req.symbol} ${req.timeframe} (${req.exchange})`,
         `Decisión estratégica: side=${r.signal?.side ?? "N/A"} confidence=${r.signal?.model?.confidence ?? r.signal?.confidence ?? "N/A"} entry=${r.signal?.entry ?? "N/A"} sl=${r.signal?.sl ?? "N/A"} tp=${r.signal?.tp ?? "N/A"}.`
@@ -1806,6 +2671,201 @@ async function main() {
 
   await bootLog();
   await bot.launch();
+  const panicEnabled = !["0", "false", "off", "no"].includes(
+    String(process.env.PANIC_ENABLED ?? "1").trim().toLowerCase()
+  );
+  const panicDropPct = Number.isFinite(Number(process.env.PANIC_BTC_DROP_PCT))
+    ? Math.max(0.5, Math.min(30, Number(process.env.PANIC_BTC_DROP_PCT)))
+    : 5;
+  const panicWindowMin = Number.isFinite(Number(process.env.PANIC_WINDOW_MIN))
+    ? Math.max(1, Math.min(60, Math.floor(Number(process.env.PANIC_WINDOW_MIN))))
+    : 5;
+  const panicCheckSeconds = Number.isFinite(Number(process.env.PANIC_CHECK_SECONDS))
+    ? Math.max(10, Math.min(3600, Math.floor(Number(process.env.PANIC_CHECK_SECONDS))))
+    : 30;
+  const panicCooldownMin = Number.isFinite(Number(process.env.PANIC_COOLDOWN_MIN))
+    ? Math.max(1, Math.min(180, Math.floor(Number(process.env.PANIC_COOLDOWN_MIN))))
+    : 10;
+  if (panicEnabled) {
+    setInterval(async () => {
+      try {
+        if (botStandby) return;
+        if (Number.isFinite(lastPanicAt) && lastPanicAt > 0 && Date.now() - lastPanicAt < panicCooldownMin * 60_000) return;
+        const btcSymbol = String(process.env.BTC_SYMBOL ?? "BTC/USDT").trim() || "BTC/USDT";
+        const btcExchange = String(process.env.PANIC_BTC_EXCHANGE ?? "binanceusdm").trim().toLowerCase() || "binanceusdm";
+        const data = await fetchCandles({ exchange: btcExchange, symbol: btcSymbol, timeframe: "1m", limit: Math.max(20, panicWindowMin + 10) });
+        const candles = Array.isArray(data?.candles) ? data.candles : [];
+        if (candles.length < panicWindowMin + 2) return;
+        const closeNow = Number(candles[candles.length - 1]?.[4]);
+        const closeThen = Number(candles[candles.length - 1 - panicWindowMin]?.[4]);
+        if (!Number.isFinite(closeNow) || !Number.isFinite(closeThen) || closeThen <= 0) return;
+        const pct = ((closeNow - closeThen) / closeThen) * 100;
+        if (pct <= -panicDropPct) {
+          const reason = `AUTO_FLASH_CRASH_BTC_${panicWindowMin}m_${panicDropPct}%`;
+          await setStandbyMode({ standby: true, reason, by: "auto" });
+          const closed = await closeAllPaperPositions({ reason: "PANIC" });
+          try {
+            await saveRiskPlans([]);
+          } catch {
+          }
+          const msg = [
+            "🛑 PANIC MODE AUTOMÁTICO (FLASH CRASH)",
+            "━━━━━━━━━━━━━━━━━━",
+            `BTC caída: ${fmt(pct, 2)}% en ${panicWindowMin}m (umbral -${panicDropPct}%)`,
+            `Paper cerradas: ${closed.closedCount}/${closed.total} (fallos ${closed.failedCount})`,
+            "Standby ON. Reactivar: /resume_bot"
+          ].join("\n");
+          await notifyAdmin(msg);
+          const posAll = await listPaperPositions();
+          const chatIds = new Set((Array.isArray(posAll) ? posAll : []).map((p) => Number(p?.chatId)).filter((x) => Number.isFinite(x)));
+          if (Number.isFinite(adminChatId)) chatIds.add(adminChatId);
+          for (const id of chatIds) {
+            try {
+              await bot.telegram.sendMessage(id, msg);
+            } catch {
+            }
+          }
+        }
+      } catch {
+      }
+    }, panicCheckSeconds * 1000).unref?.();
+  }
+  const riskPlanEnabled = !["0", "false", "off", "no"].includes(
+    String(process.env.RISK_PLAN_ENABLED ?? "1").trim().toLowerCase()
+  );
+  const riskPlanCheckSeconds = Number.isFinite(Number(process.env.RISK_PLAN_CHECK_SECONDS))
+    ? Math.max(10, Math.min(3600, Math.floor(Number(process.env.RISK_PLAN_CHECK_SECONDS))))
+    : 60;
+  const riskPlanMaxAttempts = Number.isFinite(Number(process.env.RISK_PLAN_MAX_ATTEMPTS))
+    ? Math.max(1, Math.min(10, Math.floor(Number(process.env.RISK_PLAN_MAX_ATTEMPTS))))
+    : 2;
+  let riskPlanLoopRunning = false;
+  if (riskPlanEnabled) {
+    setInterval(async () => {
+      if (riskPlanLoopRunning) return;
+      if (botStandby) return;
+      riskPlanLoopRunning = true;
+      try {
+        const store = await loadRiskPlans();
+        const plans = Array.isArray(store.plans) ? store.plans : [];
+        if (!plans.length) return;
+        const now = Date.now();
+        let changed = false;
+        const kept = [];
+        for (const p of plans) {
+          const chatId = Number(p?.chatId);
+          if (!Number.isFinite(chatId)) {
+            changed = true;
+            continue;
+          }
+          const expiresAt = Number(p?.expiresAt);
+          const attempts = Number(p?.attempts ?? 0);
+          if (Number.isFinite(expiresAt) && now > expiresAt) {
+            changed = true;
+            try {
+              await bot.telegram.sendMessage(chatId, `⏳ Plan expiró: ${p?.symbol ?? ""} ${p?.timeframe ?? ""}`);
+            } catch {
+            }
+            continue;
+          }
+          if (Number.isFinite(attempts) && attempts >= riskPlanMaxAttempts) {
+            changed = true;
+            try {
+              await bot.telegram.sendMessage(chatId, `⏳ Plan cancelado (máx intentos): ${p?.symbol ?? ""} ${p?.timeframe ?? ""}`);
+            } catch {
+            }
+            continue;
+          }
+
+          const ev = await evaluateRiskPlanCondition(p);
+          if (!ev?.ok) {
+            kept.push(p);
+            continue;
+          }
+          if (!ev.supported) {
+            kept.push(p);
+            continue;
+          }
+          if (!ev.ready) {
+            kept.push(p);
+            continue;
+          }
+
+          try {
+            const exchange = String(p?.exchange ?? "").trim();
+            const symbol = String(p?.symbol ?? "").trim();
+            const timeframe = String(p?.timeframe ?? "").trim().toLowerCase() || "15m";
+            const data = await fetchCandles({ exchange, symbol, timeframe });
+            const signal = await buildSignal(data);
+            const tgt = p?.targetEntryAdjustment && typeof p.targetEntryAdjustment === "object" ? p.targetEntryAdjustment : null;
+            const tgtMode = String(tgt?.mode ?? "").trim().toLowerCase();
+            const tgtPrice = Number(tgt?.price);
+            if (tgtMode === "limit" && Number.isFinite(tgtPrice) && tgtPrice > 0) {
+              signal.entry = tgtPrice;
+            }
+            const guard = await evaluarGuardiaDeEntrada({ chatId, signal, candles: data?.candles });
+            if (!guard?.allow) {
+              const reasons = Array.isArray(guard?.reasons) ? guard.reasons : [];
+              const next = { ...p, attempts: attempts + 1, lastTryAt: now };
+              kept.push(next);
+              changed = true;
+              try {
+                await bot.telegram.sendMessage(
+                  chatId,
+                  `⏳ Plan cumplido pero sigo bloqueando.\n\nRazones:\n- ${reasons.join("\n- ")}`.slice(0, 3900)
+                );
+              } catch {
+              }
+              continue;
+            }
+
+            await bot.telegram.sendMessage(chatId, `✅ Plan cumplido. Ejecutando entrada (paper).`);
+            await maybeSendChart(chatId, signal, data?.candles);
+            const alloc = await computePaperAllocationDecision(chatId, signal);
+            if (!alloc.allow) {
+              changed = true;
+              try {
+                await bot.telegram.sendMessage(chatId, `Plan: entrada bloqueada.\nMotivo: ${alloc.reason}`.slice(0, 3900));
+              } catch {
+              }
+              continue;
+            }
+            await openPaperPosition({
+              chatId,
+              exchange: signal.exchange,
+              symbol: signal.symbol,
+              timeframe: signal.timeframe,
+              side: signal.side,
+              entry: signal.entry,
+              sl: signal.sl,
+              tp: signal.tp,
+              tp1: signal.tp1,
+              tp2: signal.tp2,
+              remainingPct: alloc.remainingPct,
+              strategyName: signal.model?.strategyName,
+              strategyReason: "plan_retry",
+              source: "plan_retry"
+            });
+            changed = true;
+            continue;
+          } catch (e) {
+            const next = { ...p, attempts: attempts + 1, lastTryAt: now, lastError: e?.message ?? String(e) };
+            kept.push(next);
+            changed = true;
+            try {
+              await bot.telegram.sendMessage(chatId, `Plan: error al reintentar (${next.lastError})`.slice(0, 3900));
+            } catch {
+            }
+            continue;
+          }
+        }
+        if (changed) await saveRiskPlans(kept);
+      } catch {
+      } finally {
+        riskPlanLoopRunning = false;
+      }
+    }, riskPlanCheckSeconds * 1000).unref?.();
+  }
   const weeklyEnabled = !["0", "false", "off", "no"].includes(
     String(process.env.WEEKLY_REPORT_ENABLED ?? "1").trim().toLowerCase()
   );

@@ -78,6 +78,14 @@ function shouldRotateProxy(e) {
   return text.includes("restricted") || text.includes("forbidden") || text.includes("country") || text.includes("region");
 }
 
+function hintForRegionBlock(exchange) {
+  const ex = String(exchange ?? "").trim().toLowerCase() || DEFAULT_EXCHANGE;
+  const proxies = proxyPool.length ? "PROXY_URLS" : "";
+  const alt = ex.includes("binance") ? " (prueba bybit, okx, kraken o coinbase)" : "";
+  const p = proxies ? ` Configura ${proxies} con proxies salientes en una región permitida.` : "";
+  return `Acceso restringido por región en ${ex}.${p}${alt}`.trim();
+}
+
 function roundTo(value, decimals) {
   const m = 10 ** decimals;
   return Math.round(value * m) / m;
@@ -98,6 +106,91 @@ function normalizeSymbol(raw) {
   if (s.endsWith("USDT")) return `${s.slice(0, -4)}/USDT`;
   if (s.endsWith("USD")) return `${s.slice(0, -3)}/USD`;
   return s;
+}
+
+const SECTOR_MAP = {
+  L1: ["BTC", "ETH", "SOL", "BNB", "AVAX", "ADA", "ATOM", "DOT", "NEAR", "FTM", "SUI", "APT", "SEI", "KAS", "ICP"],
+  L2: ["ARB", "OP", "STRK", "ZK", "MNT", "METIS", "IMX", "POL", "MATIC"],
+  DEFI: ["UNI", "AAVE", "CRV", "SNX", "MKR", "COMP", "SUSHI", "DYDX", "GMX", "1INCH", "LDO", "RUNE"],
+  AI: ["TAO", "RNDR", "RENDER", "FET", "AGIX", "OCEAN", "AKT", "NMR", "WLD"],
+  MEME: ["DOGE", "SHIB", "PEPE", "BONK", "WIF", "FLOKI", "MEME"],
+  GAMING: ["AXS", "SAND", "MANA", "GALA", "ILV", "ENJ", "IMX", "RON", "PIXEL"],
+  ORACLES: ["LINK", "BAND", "API3", "PYTH"],
+  DEX: ["UNI", "SUSHI", "DYDX", "GMX", "CAKE", "RAY"],
+  CEX: ["BNB", "CRO", "KCS", "OKB", "HT"],
+  STORAGE: ["FIL", "AR", "STORJ", "SC"],
+  PRIVACY: ["XMR", "ZEC", "DASH"],
+  RWA: ["ONDO", "MPL", "CFG", "TOKEN", "POLYX"],
+  SOCIAL: ["MASK", "AUDIO", "GAL", "CYBER"]
+};
+
+function getBaseFromSymbol(symbol) {
+  const s = String(symbol ?? "").trim().toUpperCase();
+  if (!s) return "";
+  return s.includes("/") ? s.split("/")[0] : s.replace(/[^A-Z0-9]/g, "");
+}
+
+export function detectarSectorDeMoneda(symbol) {
+  const base = getBaseFromSymbol(symbol);
+  if (!base) return "UNKNOWN";
+  for (const [sector, items] of Object.entries(SECTOR_MAP)) {
+    if (items.includes(base)) return sector;
+  }
+  if (base.endsWith("INU") || base.endsWith("PEPE")) return "MEME";
+  return "UNKNOWN";
+}
+
+export async function getSectorExposurePct({ chatId, positions } = {}) {
+  const id = Number(chatId);
+  if (!Number.isFinite(id)) return { bySector: {}, totalPct: 0 };
+  const posArr = Array.isArray(positions) ? positions : (await loadMemory())?.positions;
+  const arr = Array.isArray(posArr) ? posArr : [];
+  const open = arr.filter((p) => Number(p?.chatId) === id);
+  const bySector = {};
+  let totalPct = 0;
+  for (const p of open) {
+    const w = Number(p?.remainingPct);
+    const pct = Number.isFinite(w) ? Math.max(0, Math.min(100, w)) : 100;
+    const sector = detectarSectorDeMoneda(p?.symbol);
+    bySector[sector] = Number(bySector[sector] ?? 0) + pct;
+    totalPct += pct;
+  }
+  return { bySector, totalPct };
+}
+
+export async function ajustarAsignacionPorSector({ chatId, signal, desiredPct } = {}) {
+  const enabled = !["0", "false", "off", "no"].includes(
+    String(process.env.SECTOR_EXPOSURE_ENABLED ?? "1").trim().toLowerCase()
+  );
+  const desired = Number(desiredPct);
+  const baseDesired = Number.isFinite(desired) ? Math.max(0, Math.min(100, Math.floor(desired))) : 0;
+  if (!enabled) return { enabled: false, allow: true, remainingPct: baseDesired, reason: null };
+
+  const maxSectorPct = Number.isFinite(Number(process.env.MAX_SECTOR_EXPOSURE_PCT))
+    ? Math.max(1, Math.min(100, Math.floor(Number(process.env.MAX_SECTOR_EXPOSURE_PCT))))
+    : 60;
+  const sector = detectarSectorDeMoneda(signal?.symbol);
+  const exposure = await getSectorExposurePct({ chatId });
+  const current = Number(exposure.bySector?.[sector] ?? 0);
+  const cur = Number.isFinite(current) ? current : 0;
+  const room = maxSectorPct - cur;
+  if (room <= 0) {
+    return {
+      enabled: true,
+      allow: false,
+      remainingPct: 0,
+      reason: `Saturación de sector ${sector}: ${formatNumber(cur, 0)}% >= ${formatNumber(maxSectorPct, 0)}%`
+    };
+  }
+  if (baseDesired > room) {
+    return {
+      enabled: true,
+      allow: true,
+      remainingPct: Math.max(1, Math.floor(room)),
+      reason: `Recorte por sector ${sector}: ${formatNumber(cur, 0)}% + ${formatNumber(baseDesired, 0)}% > ${formatNumber(maxSectorPct, 0)}%`
+    };
+  }
+  return { enabled: true, allow: true, remainingPct: baseDesired, reason: null };
 }
 
 function parseTimeframeList(raw) {
@@ -144,6 +237,8 @@ const EXPERTS_DETECTED_PATH =
   path.join(DEFAULT_TRADING_NOTES_DIR, "experts_detectados.json");
 const TRADE_HISTORY_PATH =
   envFirstNonEmpty(["TRADE_HISTORY_PATH"]) ?? path.join(DEFAULT_TRADING_NOTES_DIR, "historial_trades.json");
+const RISK_PLANS_PATH =
+  envFirstNonEmpty(["RISK_PLANS_PATH", "RISK_PLAN_PATH"]) ?? path.join(DEFAULT_TRADING_NOTES_DIR, "risk_plans.json");
 const TRADE_HISTORY_MAX = Number.isFinite(Number(process.env.TRADE_HISTORY_MAX))
   ? Math.max(20, Math.min(10000, Math.floor(Number(process.env.TRADE_HISTORY_MAX))))
   : 100;
@@ -192,6 +287,25 @@ export async function readWisdomEntries({ last = 3 } = {}) {
     const entries = splitWisdomEntries(txt);
     wisdomCache = { at: Date.now(), entries, total: entries.length };
     return { path: SABIDURIA_EVOLUTIVA_PATH, total: entries.length, entries: entries.slice(-n) };
+  } catch {
+    wisdomCache = { at: Date.now(), entries: [], total: 0 };
+    return { path: SABIDURIA_EVOLUTIVA_PATH, total: 0, entries: [] };
+  }
+}
+
+export async function readWisdomEntriesAll() {
+  if (Date.now() - wisdomCache.at < WISDOM_CACHE_MS && wisdomCache.entries.length) {
+    return {
+      path: SABIDURIA_EVOLUTIVA_PATH,
+      total: wisdomCache.total,
+      entries: wisdomCache.entries.slice()
+    };
+  }
+  try {
+    const txt = await fs.readFile(SABIDURIA_EVOLUTIVA_PATH, "utf8");
+    const entries = splitWisdomEntries(txt);
+    wisdomCache = { at: Date.now(), entries, total: entries.length };
+    return { path: SABIDURIA_EVOLUTIVA_PATH, total: entries.length, entries };
   } catch {
     wisdomCache = { at: Date.now(), entries: [], total: 0 };
     return { path: SABIDURIA_EVOLUTIVA_PATH, total: 0, entries: [] };
@@ -422,6 +536,79 @@ export async function learnFromLossWithDeepseek({ apiKey, trade, signal, extraNo
   return { enabled: true, ok: Boolean(blocks.length), titulo };
 }
 
+export async function learnFromTradeWithDeepseek({ apiKey, trade, signal, context } = {}) {
+  if (!BRAIN_AI_ENABLED) return { enabled: false };
+  const key = String(apiKey ?? "").trim();
+  if (!key) return { enabled: false };
+  const t = trade && typeof trade === "object" ? trade : {};
+  const s = signal && typeof signal === "object" ? signal : null;
+  const symbol = String(t.symbol ?? s?.symbol ?? "").trim();
+  const timeframe = String(t.timeframe ?? s?.timeframe ?? "").trim();
+  if (!symbol) return { enabled: false };
+
+  const cooldownKey = `review|${symbol}|${timeframe}`;
+  const lastAt = Number(brainLessonCooldown.get(cooldownKey) ?? 0);
+  const cooldownMs = BRAIN_AI_COOLDOWN_MIN * 60_000;
+  if (Number.isFinite(lastAt) && Date.now() - lastAt < cooldownMs) return { enabled: true, skipped: true };
+  brainLessonCooldown.set(cooldownKey, Date.now());
+
+  const ctx = context && typeof context === "object" ? context : {};
+  const ctxText = toSafeLogText(ctx).slice(0, 1800);
+  const prompt = [
+    "Eres un analista de performance de trading. Responde en JSON puro.",
+    "OBJETIVO: Extraer lecciones accionables y reglas que eviten repetir errores y refuercen lo que funciona.",
+    "REGLAS:",
+    "- Si fue trade ganador, explica por qué funcionó y qué condiciones repetir.",
+    "- Si fue trade perdedor, explica el fallo y propone una regla corta tipo NO OPERAR / ESPERAR / AJUSTAR.",
+    "- Sé concreto, corto, sin teoría.",
+    "",
+    `SIMBOLO: ${symbol}`,
+    `EXCHANGE: ${String(t.exchange ?? s?.exchange ?? "")}`,
+    `TIMEFRAME: ${timeframe}`,
+    `SIDE: ${String(t.side ?? s?.side ?? "")}`,
+    `ENTRY: ${String(t.entry ?? s?.entry ?? "")}`,
+    `SL: ${String(t.sl ?? s?.sl ?? "")}`,
+    `TP: ${String(t.tp ?? s?.tp ?? "")}`,
+    `EXIT: ${String(t.exit ?? "")}`,
+    `RESULTADO_R: ${String(t.r ?? "")}`,
+    `MOTIVO_CIERRE: ${String(t.reason ?? t.motivo ?? "")}`,
+    s?.indicators ? `INDICADORES: RSI=${s.indicators.rsi} ATR=${s.indicators.atr} EMA_FAST=${s.indicators.emaFast} EMA_SLOW=${s.indicators.emaSlow}` : "",
+    `CONTEXTO: ${ctxText || "N/A"}`,
+    "",
+    "Devuelve JSON con: categoria (TRAP_PATTERNS|CORRELATION_ALERTS|TIMING_LEFTOVERS|RISK|EDGE), titulo, leccion, regla, accion_futura (strings cortas)."
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const ai = await consultDeepseek({ apiKey: key, promptText: prompt, temperature: 0.2 });
+  const categoria = String(ai?.categoria ?? "").trim() || "RISK";
+  const titulo = String(ai?.titulo ?? "").trim() || `Review ${symbol} ${timeframe}`;
+  const blocks = [];
+  const leccion = String(ai?.leccion ?? "").trim();
+  const regla = String(ai?.regla ?? "").trim();
+  const accion = String(ai?.accion_futura ?? "").trim();
+  if (leccion) blocks.push(`Lección: ${leccion}`);
+  if (regla) blocks.push(`Regla: ${regla}`);
+  if (accion) blocks.push(`Acción futura: ${accion}`);
+  blocks.push(`Categoría: ${categoria}`);
+
+  if (blocks.length) {
+    await appendWisdomEntry({
+      title: titulo,
+      blocks,
+      meta: {
+        category: categoria,
+        symbol,
+        timeframe,
+        exchange: String(t.exchange ?? s?.exchange ?? ""),
+        side: String(t.side ?? s?.side ?? ""),
+        reason: String(t.reason ?? t.motivo ?? "")
+      }
+    });
+  }
+  return { enabled: true, ok: Boolean(blocks.length), titulo, categoria };
+}
+
 function normalizeForSearch(text) {
   return String(text ?? "")
     .toUpperCase()
@@ -466,6 +653,84 @@ export function filtrarPorSabiduria({ signals, wisdomEntries } = {}) {
   const uniq = [];
   for (const b of blocked) if (!uniq.includes(b)) uniq.push(b);
   return { kept, blockedSymbols: uniq };
+}
+
+function getCyclePhaseFromHalvingDays(daysSince, daysTo) {
+  const ds = Number(daysSince);
+  const dt = Number(daysTo);
+  if (!Number.isFinite(ds) || !Number.isFinite(dt)) return "UNKNOWN";
+  if (ds < 120) return "POST_HALVING_EARLY";
+  if (ds < 420) return "POST_HALVING_MID";
+  if (dt < 180) return "PRE_HALVING_LATE";
+  if (dt < 420) return "PRE_HALVING_MID";
+  return "PRE_HALVING_EARLY";
+}
+
+export function getCryptoCycleContext(now = new Date()) {
+  const d = now instanceof Date ? now : new Date();
+  const y = d.getUTCFullYear();
+  const month = d.getUTCMonth() + 1;
+  const q = Math.floor((month - 1) / 3) + 1;
+  const halvingDates = [
+    new Date(Date.UTC(2012, 10, 28)),
+    new Date(Date.UTC(2016, 6, 9)),
+    new Date(Date.UTC(2020, 4, 11)),
+    new Date(Date.UTC(2024, 3, 20)),
+    new Date(Date.UTC(2028, 3, 20))
+  ];
+  let last = null;
+  let next = null;
+  for (let i = 0; i < halvingDates.length; i += 1) {
+    const h = halvingDates[i];
+    if (h.getTime() <= d.getTime()) last = h;
+    if (h.getTime() > d.getTime()) {
+      next = h;
+      break;
+    }
+  }
+  const daysSince = last ? Math.floor((d.getTime() - last.getTime()) / 86400000) : null;
+  const daysTo = next ? Math.floor((next.getTime() - d.getTime()) / 86400000) : null;
+  const phase = getCyclePhaseFromHalvingDays(daysSince, daysTo);
+  return {
+    year: y,
+    quarter: `Q${q}`,
+    month,
+    btcHalving: {
+      last: last ? last.toISOString().slice(0, 10) : null,
+      next: next ? next.toISOString().slice(0, 10) : null,
+      daysSince,
+      daysTo,
+      phase
+    }
+  };
+}
+
+export function evaluarBloqueoPorSabiduria({ signal, wisdomEntries } = {}) {
+  const s = signal && typeof signal === "object" ? signal : {};
+  const sym = normalizeForSearch(s.symbol ?? "");
+  if (!sym) return { block: false, excerpt: null };
+  const tf = normalizeForSearch(s.timeframe ?? "");
+  const entries = Array.isArray(wisdomEntries) ? wisdomEntries : [];
+  for (const e of entries.slice(-60).reverse()) {
+    const one = normalizeForSearch(e);
+    const mentions =
+      one.includes(`SYMBOL=${sym}`) || one.includes(` ${sym} `) || one.endsWith(sym) || one.startsWith(sym);
+    if (!mentions) continue;
+    const tfOk = !tf || one.includes(`TIMEFRAME=${tf}`) || one.includes(` ${tf} `) || one.includes(`TF ${tf}`) || one.includes(tf);
+    if (!tfOk) continue;
+    const hasBan =
+      (one.includes("REGLA:") && (one.includes("NO OPERAR") || one.includes("EVITAR"))) ||
+      (one.includes("SENTENCIA:") && one.includes("NO OPERAR")) ||
+      (one.includes("LECCIÓN DE ORO:") && (one.includes("NO OPERAR") || one.includes("EVITAR"))) ||
+      (one.includes("REGla:".toUpperCase()) && (one.includes("NO OPERAR") || one.includes("EVITAR")));
+    if (!hasBan) continue;
+    const excerpt = String(e ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 220);
+    return { block: true, excerpt: excerpt || "Regla previa: NO OPERAR/EVITAR" };
+  }
+  return { block: false, excerpt: null };
 }
 
 export async function generarAutocritica({ apiKey, tradeFallido, contexto } = {}) {
@@ -589,6 +854,142 @@ export async function loadTradeHistory() {
   const raw = await readJsonFileSafe(TRADE_HISTORY_PATH);
   const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : [];
   return { path: TRADE_HISTORY_PATH, items: arr };
+}
+
+function timeframeToMs(tf) {
+  const s = String(tf ?? "").trim().toLowerCase();
+  const m = s.match(/^(\d+)\s*([mhdw])$/);
+  if (!m) return 15 * 60 * 1000;
+  const n = Math.max(1, Math.floor(Number(m[1])));
+  const u = m[2];
+  if (u === "m") return n * 60 * 1000;
+  if (u === "h") return n * 60 * 60 * 1000;
+  if (u === "d") return n * 24 * 60 * 60 * 1000;
+  if (u === "w") return n * 7 * 24 * 60 * 60 * 1000;
+  return 15 * 60 * 1000;
+}
+
+export async function loadRiskPlans() {
+  const raw = await readJsonFileSafe(RISK_PLANS_PATH);
+  const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.plans) ? raw.plans : [];
+  return { path: RISK_PLANS_PATH, plans: arr };
+}
+
+export async function saveRiskPlans(plans) {
+  const safe = Array.isArray(plans) ? plans : [];
+  try {
+    await fs.mkdir(path.dirname(RISK_PLANS_PATH), { recursive: true }).catch(() => {});
+    await writeJsonFile(RISK_PLANS_PATH, { plans: safe });
+  } catch {
+  }
+  return { ok: true, path: RISK_PLANS_PATH, count: safe.length };
+}
+
+export async function upsertRiskPlanFromGate({ chatId, signal, gate } = {}) {
+  const idNum = Number(chatId);
+  if (!Number.isFinite(idNum)) return null;
+  const s = signal && typeof signal === "object" ? signal : {};
+  const g = gate && typeof gate === "object" ? gate : {};
+  const next = g.nextStepCondition && typeof g.nextStepCondition === "object" ? g.nextStepCondition : null;
+  if (!next) return null;
+
+  const maxCandles = Number.isFinite(Number(g.retry?.maxCandles))
+    ? Math.max(1, Math.min(50, Math.floor(Number(g.retry.maxCandles))))
+    : Number.isFinite(Number(process.env.RISK_PLAN_MAX_CANDLES))
+      ? Math.max(1, Math.min(50, Math.floor(Number(process.env.RISK_PLAN_MAX_CANDLES))))
+      : 6;
+
+  const createdAt = nowMs();
+  const tf = String(s.timeframe ?? next.timeframe ?? "15m").trim().toLowerCase() || "15m";
+  const expiresAt = createdAt + maxCandles * timeframeToMs(tf);
+  const key = `${idNum}|${String(s.exchange ?? "")}|${String(s.symbol ?? "")}|${tf}|${String(s.side ?? "")}`;
+
+  const plan = {
+    id: `plan_${createdAt}_${Math.random().toString(16).slice(2)}`,
+    key,
+    chatId: idNum,
+    exchange: String(s.exchange ?? ""),
+    symbol: String(s.symbol ?? ""),
+    timeframe: tf,
+    side: String(s.side ?? ""),
+    createdAt,
+    expiresAt,
+    maxCandles,
+    attempts: 0,
+    nextStepCondition: next,
+    targetEntryAdjustment:
+      g.targetEntryAdjustment && typeof g.targetEntryAdjustment === "object" ? g.targetEntryAdjustment : null
+  };
+
+  const store = await loadRiskPlans();
+  const arr = Array.isArray(store.plans) ? store.plans : [];
+  const kept = arr.filter((p) => String(p?.key ?? "") !== key);
+  kept.push(plan);
+  await saveRiskPlans(kept.slice(-500));
+  return plan;
+}
+
+export async function deleteRiskPlanById(id) {
+  const store = await loadRiskPlans();
+  const arr = Array.isArray(store.plans) ? store.plans : [];
+  const kept = arr.filter((p) => String(p?.id ?? "") !== String(id ?? ""));
+  if (kept.length === arr.length) return { ok: true, removed: 0 };
+  await saveRiskPlans(kept);
+  return { ok: true, removed: 1 };
+}
+
+export async function evaluateRiskPlanCondition(plan) {
+  const p = plan && typeof plan === "object" ? plan : {};
+  const cond = p.nextStepCondition && typeof p.nextStepCondition === "object" ? p.nextStepCondition : null;
+  if (!cond) return { ok: false, ready: false, supported: false, reason: "missing_condition" };
+  const type = String(cond.type ?? "").trim().toLowerCase();
+  const tf = String(cond.timeframe ?? p.timeframe ?? "15m").trim().toLowerCase() || "15m";
+  const exchange = String(p.exchange ?? "").trim();
+  const symbol = String(p.symbol ?? "").trim();
+  if (!exchange || !symbol) return { ok: false, ready: false, supported: false, reason: "missing_symbol" };
+
+  try {
+    const data = await fetchCandles({ exchange, symbol, timeframe: tf, limit: 120 });
+    const candles = Array.isArray(data?.candles) ? data.candles : [];
+    if (candles.length < 30) return { ok: true, ready: false, supported: true, reason: "not_enough_candles" };
+
+    if (type === "volume_above_sma") {
+      const period = Number.isFinite(Number(cond.params?.period)) ? Math.max(5, Math.min(50, Math.floor(Number(cond.params.period)))) : 20;
+      const mult = Number.isFinite(Number(cond.params?.multiplier)) ? Math.max(0.5, Math.min(5, Number(cond.params.multiplier))) : 1;
+      const vols = candles.map((c) => Number(c?.[5])).filter((v) => Number.isFinite(v) && v >= 0);
+      if (vols.length < period + 2) return { ok: true, ready: false, supported: true, reason: "not_enough_volume" };
+      const lastVol = vols[vols.length - 1];
+      const slice = vols.slice(vols.length - 1 - period, vols.length - 1);
+      const sma = slice.reduce((a, b) => a + b, 0) / slice.length;
+      const ready = Number.isFinite(lastVol) && Number.isFinite(sma) && sma > 0 ? lastVol >= sma * mult : false;
+      return { ok: true, ready, supported: true, metrics: { lastVol, sma, mult } };
+    }
+
+    if (type === "rsi_threshold") {
+      const period = Number.isFinite(Number(cond.params?.period)) ? Math.max(3, Math.min(50, Math.floor(Number(cond.params.period)))) : 14;
+      const threshold = Number.isFinite(Number(cond.params?.threshold)) ? Math.max(1, Math.min(99, Number(cond.params.threshold))) : 30;
+      const direction = String(cond.params?.direction ?? "above").trim().toLowerCase();
+      const closes = candles.map((c) => Number(c?.[4])).filter((v) => Number.isFinite(v));
+      const arr = rsi(closes, period);
+      const last = Number(arr?.[arr.length - 1]);
+      const ready = Number.isFinite(last) ? (direction === "below" ? last <= threshold : last >= threshold) : false;
+      return { ok: true, ready, supported: true, metrics: { rsi: last, threshold, direction, period } };
+    }
+
+    if (type === "price_retest") {
+      const level = Number(cond.params?.level);
+      const tolPct = Number.isFinite(Number(cond.params?.tolerancePct)) ? Math.max(0.01, Math.min(20, Number(cond.params.tolerancePct))) : 0.3;
+      const lastClose = Number(candles[candles.length - 1]?.[4]);
+      if (!Number.isFinite(level) || level <= 0 || !Number.isFinite(lastClose)) return { ok: true, ready: false, supported: true, reason: "invalid_level" };
+      const diffPct = (Math.abs(lastClose - level) / level) * 100;
+      const ready = diffPct <= tolPct;
+      return { ok: true, ready, supported: true, metrics: { lastClose, level, tolPct, diffPct } };
+    }
+
+    return { ok: true, ready: false, supported: false, reason: "unsupported_type" };
+  } catch (e) {
+    return { ok: false, ready: false, supported: false, reason: e?.message ?? String(e) };
+  }
 }
 
 function computePnlPct({ side, entry, exit }) {
@@ -724,13 +1125,15 @@ export async function generarReporteSemanal({ now, days } = {}) {
 
 export async function loadMemory() {
   const raw = await readJsonFileSafe(MEMORY_FILE);
-  if (!raw) return { trades: [], positions: [], stats: {}, strategyStats: {}, config: { alerts: {} } };
+  if (!raw) return { trades: [], positions: [], stats: {}, strategyStats: {}, config: { alerts: {}, aiStats: {}, bot: {} } };
   const trades = Array.isArray(raw.trades) ? raw.trades : [];
   const positions = Array.isArray(raw.positions) ? raw.positions : [];
   const stats = raw.stats && typeof raw.stats === "object" ? raw.stats : {};
   const strategyStats = raw.strategyStats && typeof raw.strategyStats === "object" ? raw.strategyStats : {};
   const config = raw.config && typeof raw.config === "object" ? raw.config : { alerts: {} };
   config.alerts = config.alerts && typeof config.alerts === "object" ? config.alerts : {};
+  config.aiStats = config.aiStats && typeof config.aiStats === "object" ? config.aiStats : {};
+  config.bot = config.bot && typeof config.bot === "object" ? config.bot : {};
   return { trades, positions, stats, strategyStats, config };
 }
 
@@ -744,8 +1147,104 @@ export async function saveMemory(mem) {
   };
   safe.config.alerts =
     safe.config.alerts && typeof safe.config.alerts === "object" ? safe.config.alerts : {};
+  safe.config.aiStats =
+    safe.config.aiStats && typeof safe.config.aiStats === "object" ? safe.config.aiStats : {};
+  safe.config.bot =
+    safe.config.bot && typeof safe.config.bot === "object" ? safe.config.bot : {};
   await writeJsonFile(MEMORY_FILE, safe);
   return safe;
+}
+
+const aiStatsWriteState = { pendingCalls: 0, pendingAvoided: 0, pendingTokensIn: 0, pendingTokensOut: 0, lastWriteAt: 0 };
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function aiCostUsd({ tokensIn = 0, tokensOut = 0 } = {}) {
+  const tin = Number(tokensIn);
+  const tout = Number(tokensOut);
+  const inPrice = Number.isFinite(Number(process.env.AI_PRICE_INPUT_1M))
+    ? Math.max(0, Number(process.env.AI_PRICE_INPUT_1M))
+    : 0;
+  const outPrice = Number.isFinite(Number(process.env.AI_PRICE_OUTPUT_1M))
+    ? Math.max(0, Number(process.env.AI_PRICE_OUTPUT_1M))
+    : 0;
+  const costIn = Number.isFinite(tin) ? (tin / 1_000_000) * inPrice : 0;
+  const costOut = Number.isFinite(tout) ? (tout / 1_000_000) * outPrice : 0;
+  return costIn + costOut;
+}
+
+export async function incrementAiStats({ calls = 0, avoided = 0, tokensIn = 0, tokensOut = 0, force = false } = {}) {
+  const c = Number(calls);
+  const a = Number(avoided);
+  const tin = Number(tokensIn);
+  const tout = Number(tokensOut);
+  if (Number.isFinite(c) && c !== 0) aiStatsWriteState.pendingCalls += Math.floor(c);
+  if (Number.isFinite(a) && a !== 0) aiStatsWriteState.pendingAvoided += Math.floor(a);
+  if (Number.isFinite(tin) && tin !== 0) aiStatsWriteState.pendingTokensIn += Math.floor(tin);
+  if (Number.isFinite(tout) && tout !== 0) aiStatsWriteState.pendingTokensOut += Math.floor(tout);
+  const now = Date.now();
+  const minIntervalMs = Number.isFinite(Number(process.env.AI_STATS_FLUSH_MS))
+    ? Math.max(1000, Math.min(300000, Math.floor(Number(process.env.AI_STATS_FLUSH_MS))))
+    : 30000;
+  if (!force && now - aiStatsWriteState.lastWriteAt < minIntervalMs) return { ok: true, pending: true };
+  if (
+    aiStatsWriteState.pendingCalls === 0 &&
+    aiStatsWriteState.pendingAvoided === 0 &&
+    aiStatsWriteState.pendingTokensIn === 0 &&
+    aiStatsWriteState.pendingTokensOut === 0
+  )
+    return { ok: true, pending: false };
+
+  const mem = await loadMemory();
+  mem.config = mem.config && typeof mem.config === "object" ? mem.config : {};
+  mem.config.aiStats = mem.config.aiStats && typeof mem.config.aiStats === "object" ? mem.config.aiStats : {};
+  const s = mem.config.aiStats;
+  const tk = todayKey();
+  if (String(s.day ?? "") !== tk) {
+    s.day = tk;
+    s.dayCalls = 0;
+    s.dayAvoided = 0;
+    s.dayTokensIn = 0;
+    s.dayTokensOut = 0;
+    s.dayUsdSpent = 0;
+  }
+
+  s.calls = Math.max(0, Math.floor(Number(s.calls) || 0) + aiStatsWriteState.pendingCalls);
+  s.avoided = Math.max(0, Math.floor(Number(s.avoided) || 0) + aiStatsWriteState.pendingAvoided);
+  s.tokensIn = Math.max(0, Math.floor(Number(s.tokensIn) || 0) + aiStatsWriteState.pendingTokensIn);
+  s.tokensOut = Math.max(0, Math.floor(Number(s.tokensOut) || 0) + aiStatsWriteState.pendingTokensOut);
+
+  s.dayCalls = Math.max(0, Math.floor(Number(s.dayCalls) || 0) + aiStatsWriteState.pendingCalls);
+  s.dayAvoided = Math.max(0, Math.floor(Number(s.dayAvoided) || 0) + aiStatsWriteState.pendingAvoided);
+  s.dayTokensIn = Math.max(0, Math.floor(Number(s.dayTokensIn) || 0) + aiStatsWriteState.pendingTokensIn);
+  s.dayTokensOut = Math.max(0, Math.floor(Number(s.dayTokensOut) || 0) + aiStatsWriteState.pendingTokensOut);
+
+  s.usdSpent = aiCostUsd({ tokensIn: s.tokensIn, tokensOut: s.tokensOut });
+  s.dayUsdSpent = aiCostUsd({ tokensIn: s.dayTokensIn, tokensOut: s.dayTokensOut });
+  s.updatedAt = new Date().toISOString();
+  await saveMemory(mem);
+  aiStatsWriteState.pendingCalls = 0;
+  aiStatsWriteState.pendingAvoided = 0;
+  aiStatsWriteState.pendingTokensIn = 0;
+  aiStatsWriteState.pendingTokensOut = 0;
+  aiStatsWriteState.lastWriteAt = now;
+  return {
+    ok: true,
+    pending: false,
+    calls: s.calls,
+    avoided: s.avoided,
+    tokensIn: s.tokensIn,
+    tokensOut: s.tokensOut,
+    usdSpent: s.usdSpent,
+    day: s.day,
+    dayCalls: s.dayCalls,
+    dayAvoided: s.dayAvoided,
+    dayTokensIn: s.dayTokensIn,
+    dayTokensOut: s.dayTokensOut,
+    dayUsdSpent: s.dayUsdSpent
+  };
 }
 
 function normalizeTokens(text) {
@@ -1328,31 +1827,83 @@ export async function fetchCandles({ exchange, symbol, timeframe, limit = DEFAUL
         const p = nextProxy();
         if (p) ex.proxy = p;
       }
-      const backoff = 1000 * 2 ** attempt;
+      const backoff = Math.min(8000, 2000 * 2 ** attempt);
       await sleep(backoff);
     }
   }
 
+  const status = extractHttpStatus(lastErr);
+  if (status === 451) {
+    throw new Error(hintForRegionBlock(exchange));
+  }
   throw lastErr ?? new Error("fetchCandles falló");
 }
 
 export async function fetchLastPrice({ exchange, symbol }) {
   const ex = getExchange(exchange);
   if (!ex.has?.fetchTicker) throw new Error(`El exchange ${exchange} no soporta ticker`);
-  const m = await ex.loadMarkets();
-  const normalizedSymbol = resolveMarketSymbol(m, symbol);
-  if (!normalizedSymbol) throw new Error(`Símbolo no encontrado en ${exchange}: ${symbol}`);
-  const t = await ex.fetchTicker(normalizedSymbol);
-  const candidates = [t?.last, t?.close, t?.bid, t?.ask]
-    .map((x) => Number(x))
-    .filter((x) => Number.isFinite(x));
-  if (!candidates.length) throw new Error("Ticker sin precio usable");
-  return { exchange, symbol: normalizedSymbol, price: candidates[0], ticker: t };
+  const maxAttempts = Number.isFinite(Number(process.env.FETCH_RETRY_ATTEMPTS))
+    ? Math.max(1, Math.min(5, Math.floor(Number(process.env.FETCH_RETRY_ATTEMPTS))))
+    : 4;
+  let lastErr = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const m = await ex.loadMarkets();
+      const normalizedSymbol = resolveMarketSymbol(m, symbol);
+      if (!normalizedSymbol) throw new Error(`Símbolo no encontrado en ${exchange}: ${symbol}`);
+      const t = await ex.fetchTicker(normalizedSymbol);
+      const candidates = [t?.last, t?.close, t?.bid, t?.ask]
+        .map((x) => Number(x))
+        .filter((x) => Number.isFinite(x));
+      if (!candidates.length) throw new Error("Ticker sin precio usable");
+      return { exchange, symbol: normalizedSymbol, price: candidates[0], ticker: t };
+    } catch (e) {
+      lastErr = e;
+      if (!isRetryableExchangeError(e) || attempt === maxAttempts - 1) break;
+      if (proxyPool.length && shouldRotateProxy(e)) {
+        const p = nextProxy();
+        if (p) ex.proxy = p;
+      }
+      const backoff = Math.min(8000, 2000 * 2 ** attempt);
+      await sleep(backoff);
+    }
+  }
+
+  const status = extractHttpStatus(lastErr);
+  if (status === 451) {
+    throw new Error(hintForRegionBlock(exchange));
+  }
+  throw lastErr ?? new Error("fetchLastPrice falló");
 }
 
 export async function listSpotSymbols({ exchange, quote = "USDT", maxSymbols = 200 } = {}) {
   const ex = getExchange(exchange);
-  const markets = await ex.loadMarkets();
+  const maxAttempts = Number.isFinite(Number(process.env.FETCH_RETRY_ATTEMPTS))
+    ? Math.max(1, Math.min(5, Math.floor(Number(process.env.FETCH_RETRY_ATTEMPTS))))
+    : 4;
+  let lastErr = null;
+  let markets = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      markets = await ex.loadMarkets();
+      break;
+    } catch (e) {
+      lastErr = e;
+      if (!isRetryableExchangeError(e) || attempt === maxAttempts - 1) break;
+      if (proxyPool.length && shouldRotateProxy(e)) {
+        const p = nextProxy();
+        if (p) ex.proxy = p;
+      }
+      const backoff = Math.min(8000, 2000 * 2 ** attempt);
+      await sleep(backoff);
+    }
+  }
+  if (!markets) {
+    const status = extractHttpStatus(lastErr);
+    if (status === 451) throw new Error(hintForRegionBlock(exchange));
+    throw lastErr ?? new Error("loadMarkets falló");
+  }
   const out = [];
 
   for (const m of Object.values(markets)) {
@@ -1376,7 +1927,31 @@ export async function listSpotSymbols({ exchange, quote = "USDT", maxSymbols = 2
 
 export async function listFuturesSymbols({ exchange, quote = "USDT", maxSymbols = 200 } = {}) {
   const ex = getExchange(exchange);
-  const markets = await ex.loadMarkets();
+  const maxAttempts = Number.isFinite(Number(process.env.FETCH_RETRY_ATTEMPTS))
+    ? Math.max(1, Math.min(5, Math.floor(Number(process.env.FETCH_RETRY_ATTEMPTS))))
+    : 4;
+  let lastErr = null;
+  let markets = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      markets = await ex.loadMarkets();
+      break;
+    } catch (e) {
+      lastErr = e;
+      if (!isRetryableExchangeError(e) || attempt === maxAttempts - 1) break;
+      if (proxyPool.length && shouldRotateProxy(e)) {
+        const p = nextProxy();
+        if (p) ex.proxy = p;
+      }
+      const backoff = Math.min(8000, 2000 * 2 ** attempt);
+      await sleep(backoff);
+    }
+  }
+  if (!markets) {
+    const status = extractHttpStatus(lastErr);
+    if (status === 451) throw new Error(hintForRegionBlock(exchange));
+    throw lastErr ?? new Error("loadMarkets falló");
+  }
   const out = [];
 
   for (const m of Object.values(markets)) {
@@ -1495,6 +2070,79 @@ function atr(candles, period) {
     prevClose = close;
   }
   return out;
+}
+
+function adxLast(candles, period = 14) {
+  const p = Number(period);
+  if (!Number.isFinite(p) || p < 2) return null;
+  if (!Array.isArray(candles) || candles.length < p * 2 + 2) return null;
+
+  let trSum = 0;
+  let pDmSum = 0;
+  let nDmSum = 0;
+  const dxArr = [];
+
+  for (let i = 1; i <= p; i += 1) {
+    const prev = candles[i - 1];
+    const cur = candles[i];
+    const prevHigh = Number(prev?.[2]);
+    const prevLow = Number(prev?.[3]);
+    const prevClose = Number(prev?.[4]);
+    const high = Number(cur?.[2]);
+    const low = Number(cur?.[3]);
+    if (!Number.isFinite(prevHigh) || !Number.isFinite(prevLow) || !Number.isFinite(prevClose)) return null;
+    if (!Number.isFinite(high) || !Number.isFinite(low)) return null;
+    const upMove = high - prevHigh;
+    const downMove = prevLow - low;
+    const pDm = upMove > downMove && upMove > 0 ? upMove : 0;
+    const nDm = downMove > upMove && downMove > 0 ? downMove : 0;
+    const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+    trSum += tr;
+    pDmSum += pDm;
+    nDmSum += nDm;
+  }
+
+  const diPlus0 = trSum > 0 ? (100 * pDmSum) / trSum : 0;
+  const diMinus0 = trSum > 0 ? (100 * nDmSum) / trSum : 0;
+  const dx0 = diPlus0 + diMinus0 > 0 ? (100 * Math.abs(diPlus0 - diMinus0)) / (diPlus0 + diMinus0) : 0;
+  dxArr.push(dx0);
+
+  for (let i = p + 1; i < candles.length; i += 1) {
+    const prev = candles[i - 1];
+    const cur = candles[i];
+    const prevHigh = Number(prev?.[2]);
+    const prevLow = Number(prev?.[3]);
+    const prevClose = Number(prev?.[4]);
+    const high = Number(cur?.[2]);
+    const low = Number(cur?.[3]);
+    if (!Number.isFinite(prevHigh) || !Number.isFinite(prevLow) || !Number.isFinite(prevClose)) break;
+    if (!Number.isFinite(high) || !Number.isFinite(low)) break;
+    const upMove = high - prevHigh;
+    const downMove = prevLow - low;
+    const pDm = upMove > downMove && upMove > 0 ? upMove : 0;
+    const nDm = downMove > upMove && downMove > 0 ? downMove : 0;
+    const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+
+    trSum = trSum - trSum / p + tr;
+    pDmSum = pDmSum - pDmSum / p + pDm;
+    nDmSum = nDmSum - nDmSum / p + nDm;
+
+    const diPlus = trSum > 0 ? (100 * pDmSum) / trSum : 0;
+    const diMinus = trSum > 0 ? (100 * nDmSum) / trSum : 0;
+    const dx = diPlus + diMinus > 0 ? (100 * Math.abs(diPlus - diMinus)) / (diPlus + diMinus) : 0;
+    dxArr.push(dx);
+  }
+
+  if (dxArr.length < p + 1) return null;
+  let adx = dxArr.slice(0, p).reduce((a, b) => a + b, 0) / p;
+  for (let i = p; i < dxArr.length; i += 1) {
+    adx = (adx * (p - 1) + dxArr[i]) / p;
+  }
+  return Number.isFinite(adx) ? adx : null;
+}
+
+export function computeAdxValueFromCandles(candles, period = 14) {
+  return adxLast(Array.isArray(candles) ? candles : [], period);
 }
 
 function lastFinite(arr) {
@@ -1977,6 +2625,423 @@ export function formatSignalMessage(signal) {
   return lines.join("\n");
 }
 
+export function buildSignalChartUrl({ signal, candles, window = 120 } = {}) {
+  const enabled = !["0", "false", "off", "no"].includes(String(process.env.CHART_ENABLED ?? "1").trim().toLowerCase());
+  if (!enabled) return null;
+  const base = String(process.env.CHART_BASE_URL ?? "https://quickchart.io/chart").trim() || "https://quickchart.io/chart";
+
+  const s = signal && typeof signal === "object" ? signal : {};
+  const arr = Array.isArray(candles) ? candles : Array.isArray(s.candles) ? s.candles : [];
+  const slice = arr.slice(Math.max(0, arr.length - Math.max(20, Math.min(400, Number(window) || 120))));
+  const closes = slice.map((c) => Number(c?.[4])).filter((x) => Number.isFinite(x));
+  if (closes.length < 10) return null;
+
+  const labels = new Array(closes.length).fill("");
+  const entry = Number(s.entry);
+  const sl = Number(s.sl);
+  const tp = Number.isFinite(Number(s.tp2)) ? Number(s.tp2) : Number(s.tp);
+  const tp1 = Number(s.tp1);
+  const hasEntry = Number.isFinite(entry);
+
+  function flat(level) {
+    if (!Number.isFinite(level)) return null;
+    return new Array(closes.length).fill(level);
+  }
+
+  const datasets = [
+    {
+      label: "Close",
+      data: closes,
+      borderColor: "#5fa8ff",
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: false
+    }
+  ];
+  if (hasEntry) {
+    datasets.push({
+      label: "Entry",
+      data: flat(entry),
+      borderColor: "#ffffff",
+      borderWidth: 1,
+      borderDash: [6, 6],
+      pointRadius: 0,
+      fill: false
+    });
+  }
+  if (Number.isFinite(sl)) {
+    datasets.push({
+      label: "SL",
+      data: flat(sl),
+      borderColor: "#ff6b6b",
+      borderWidth: 1,
+      pointRadius: 0,
+      fill: false
+    });
+  }
+  if (Number.isFinite(tp1)) {
+    datasets.push({
+      label: "TP1",
+      data: flat(tp1),
+      borderColor: "#ffd166",
+      borderWidth: 1,
+      pointRadius: 0,
+      fill: false
+    });
+  }
+  if (Number.isFinite(tp)) {
+    datasets.push({
+      label: Number.isFinite(tp1) ? "TP2" : "TP",
+      data: flat(tp),
+      borderColor: "#5cffb0",
+      borderWidth: 1,
+      pointRadius: 0,
+      fill: false
+    });
+  }
+
+  const title = `${String(s.symbol ?? "").slice(0, 20)} ${String(s.timeframe ?? "")} ${String(s.side ?? "")}`.trim();
+  const config = {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      legend: { labels: { fontColor: "#e9eefc" } },
+      title: { display: Boolean(title), text: title, fontColor: "#e9eefc" },
+      scales: {
+        xAxes: [{ display: false }],
+        yAxes: [
+          {
+            gridLines: { color: "rgba(255,255,255,0.08)" },
+            ticks: { fontColor: "#9db0d9" }
+          }
+        ]
+      }
+    }
+  };
+
+  const qs = new URLSearchParams({
+    c: JSON.stringify(config),
+    backgroundColor: "transparent",
+    width: "700",
+    height: "340",
+    format: "png"
+  }).toString();
+  return `${base}?${qs}`;
+}
+
+export async function evaluarGuardiaDeEntrada({ chatId, signal, candles, headlines } = {}) {
+  const enabled = !["0", "false", "off", "no"].includes(String(process.env.GUARD_ENABLED ?? "1").trim().toLowerCase());
+  if (!enabled) return { enabled: false, allow: true, reasons: [] };
+
+  const s = signal && typeof signal === "object" ? signal : {};
+  const side = String(s.side ?? "").toUpperCase();
+  if (!side || side === "NEUTRAL") return { enabled: true, allow: false, reasons: ["Sin señal clara (NEUTRAL)."] };
+
+  const entry = Number(s.entry);
+  const sl = Number(s.sl);
+  const tpFinal = Number.isFinite(Number(s.tp2)) ? Number(s.tp2) : Number(s.tp);
+
+  const reasons = [];
+  const conf = Number(s?.model?.confidence);
+  const minConf = Number.isFinite(Number(process.env.GUARD_MIN_CONFIDENCE))
+    ? Math.max(0, Math.min(1, Number(process.env.GUARD_MIN_CONFIDENCE)))
+    : 0.6;
+  if (Number.isFinite(conf) && conf < minConf) {
+    reasons.push(`Confianza baja: ${formatNumber(conf, 3)} < ${formatNumber(minConf, 3)}.`);
+  }
+
+  const maxRiskPct = Number.isFinite(Number(process.env.GUARD_MAX_RISK_PCT))
+    ? Math.max(0.05, Math.min(20, Number(process.env.GUARD_MAX_RISK_PCT)))
+    : 1;
+  if (Number.isFinite(entry) && entry > 0 && Number.isFinite(sl)) {
+    const riskPct = (Math.abs(entry - sl) / entry) * 100;
+    if (Number.isFinite(riskPct) && riskPct > maxRiskPct) {
+      reasons.push(`Riesgo excesivo: ${formatNumber(riskPct, 2)}% > ${formatNumber(maxRiskPct, 2)}%.`);
+    }
+  } else {
+    reasons.push("Faltan entry/SL válidos para medir riesgo.");
+  }
+
+  const minRr = Number.isFinite(Number(process.env.GUARD_MIN_RR)) ? Math.max(0.2, Math.min(10, Number(process.env.GUARD_MIN_RR))) : 1.2;
+  if (Number.isFinite(entry) && Number.isFinite(sl) && Number.isFinite(tpFinal)) {
+    const risk = Math.abs(entry - sl);
+    const reward = Math.abs(tpFinal - entry);
+    const rr = risk > 0 ? reward / risk : null;
+    if (!Number.isFinite(rr)) {
+      reasons.push("RR no calculable (riesgo=0).");
+    } else if (rr < minRr) {
+      reasons.push(`RR pobre: ${formatNumber(rr, 2)} < ${formatNumber(minRr, 2)}.`);
+    }
+  }
+
+  const trap = detectWhaleTrap({ candles, side });
+  const trapScore = Number(trap?.score ?? 0);
+  const trapMax = Number.isFinite(Number(process.env.GUARD_MAX_TRAP_SCORE))
+    ? Math.max(0, Math.min(1, Number(process.env.GUARD_MAX_TRAP_SCORE)))
+    : 0.75;
+  if (trap?.isTrap || trapScore >= trapMax) {
+    reasons.push(`Posible whale trap: score ${formatNumber(trapScore, 2)}.`);
+  }
+
+  const wisdomGuardEnabled = !["0", "false", "off", "no"].includes(
+    String(process.env.WISDOM_GUARD_ENABLED ?? "1").trim().toLowerCase()
+  );
+  if (wisdomGuardEnabled && reasons.length === 0) {
+    try {
+      const w = await readWisdomEntries({ last: 20 });
+      const blk = evaluarBloqueoPorSabiduria({ signal: s, wisdomEntries: w.entries });
+      if (blk?.block) reasons.push(`Bloqueado por sabiduría: ${String(blk.excerpt ?? "").trim()}`);
+    } catch {
+    }
+  }
+
+  let btcCorr = null;
+  let btcBeta = null;
+  let btcVolToBtc = null;
+  let btcRsi1h = null;
+  let btcOverbought = null;
+  let btcSellWall = null;
+  let btcSellWallRatio = null;
+
+  const btcCheckEnabled = !["0", "false", "off", "no"].includes(
+    String(process.env.BTC_CHECK_ENABLED ?? "1").trim().toLowerCase()
+  );
+  if (btcCheckEnabled && reasons.length === 0 && side === "LONG") {
+    const base = getBaseFromSymbol(s.symbol);
+    if (base && base !== "BTC") {
+      const win = Number.isFinite(Number(process.env.BTC_CORR_WINDOW))
+        ? Math.max(30, Math.min(300, Math.floor(Number(process.env.BTC_CORR_WINDOW))))
+        : 50;
+      const corrHigh = Number.isFinite(Number(process.env.BTC_CORR_HIGH))
+        ? Math.max(-1, Math.min(1, Number(process.env.BTC_CORR_HIGH)))
+        : 0.85;
+      const betaHigh = Number.isFinite(Number(process.env.BTC_BETA_HIGH))
+        ? Math.max(-5, Math.min(10, Number(process.env.BTC_BETA_HIGH)))
+        : 1.2;
+      try {
+        const stats = await computeBtcCorrelationBeta({
+          exchange: s.exchange,
+          symbol: s.symbol,
+          timeframe: s.timeframe,
+          window: win
+        });
+        btcCorr = Number(stats?.correlation);
+        btcBeta = Number(stats?.beta);
+        btcVolToBtc = Number(stats?.volToBtc);
+      } catch {
+      }
+      try {
+        const wk = await fetchBtcMarketWeakness({ exchange: s.exchange });
+        btcRsi1h = Number(wk?.rsi1h);
+        btcOverbought = wk?.overbought === true;
+        btcSellWall = wk?.sellWall === true;
+        btcSellWallRatio = Number(wk?.sellWallRatio);
+      } catch {
+      }
+
+      const corrOk = Number.isFinite(btcCorr) ? btcCorr >= corrHigh : false;
+      const betaOk = Number.isFinite(btcBeta) ? btcBeta >= betaHigh : false;
+      const btcWeak = btcOverbought === true || btcSellWall === true;
+      if (corrOk && betaOk && btcWeak) {
+        const parts = [];
+        if (Number.isFinite(btcCorr)) parts.push(`corrBTC ${formatNumber(btcCorr, 2)}`);
+        if (Number.isFinite(btcBeta)) parts.push(`beta ${formatNumber(btcBeta, 2)}`);
+        if (Number.isFinite(btcRsi1h)) parts.push(`BTC_RSI1h ${formatNumber(btcRsi1h, 0)}`);
+        if (btcSellWall === true && Number.isFinite(btcSellWallRatio)) parts.push(`sellWall x${formatNumber(btcSellWallRatio, 1)}`);
+        reasons.push(`BTC-check: entrada en ${String(s.symbol ?? "")} cancelada: ${parts.join(" | ") || "BTC débil"} (esperando desacople).`);
+      }
+    }
+  }
+
+  let whale = null;
+  let volAnom = null;
+  const whaleEnabled = !["0", "false", "off", "no"].includes(
+    String(process.env.WHALE_TRACKER_ENABLED ?? "1").trim().toLowerCase()
+  );
+  const volEnabled = !["0", "false", "off", "no"].includes(
+    String(process.env.VOLUME_ANOMALY_ENABLED ?? "1").trim().toLowerCase()
+  );
+  if (reasons.length === 0 && (whaleEnabled || volEnabled)) {
+    if (whaleEnabled) {
+      try {
+        whale = await getWhalePressure({ exchange: s.exchange, symbol: s.symbol });
+      } catch {
+        whale = null;
+      }
+      const spoof = whale?.spoofing ? String(whale.spoofing) : "";
+      if (spoof) reasons.push(`Whale Tracker: spoofing detectado (${spoof}). Ignorando señales de corto plazo.`);
+      if (side === "LONG" && whale?.sellWall === true) {
+        const ratio = Number(whale?.sellWallRatio);
+        reasons.push(
+          `Whale Tracker: pared de ventas (sell wall)${Number.isFinite(ratio) ? ` x${formatNumber(ratio, 1)}` : ""}.`
+        );
+      }
+      if (side === "SHORT" && whale?.buyWall === true) {
+        const ratio = Number(whale?.buyWallRatio);
+        reasons.push(
+          `Whale Tracker: pared de compras (buy wall)${Number.isFinite(ratio) ? ` x${formatNumber(ratio, 1)}` : ""}.`
+        );
+      }
+    }
+    if (volEnabled && reasons.length === 0) {
+      try {
+        const zHigh = Number.isFinite(Number(process.env.VOLUME_Z_HIGH)) ? Number(process.env.VOLUME_Z_HIGH) : 2.5;
+        const wickRatioMin = Number.isFinite(Number(process.env.ABSORPTION_WICK_RATIO)) ? Number(process.env.ABSORPTION_WICK_RATIO) : 0.7;
+        const bodyMax = Number.isFinite(Number(process.env.ABSORPTION_BODY_MAX)) ? Number(process.env.ABSORPTION_BODY_MAX) : 0.3;
+        const lowMovePct = Number.isFinite(Number(process.env.ABSORPTION_LOW_MOVE_PCT)) ? Number(process.env.ABSORPTION_LOW_MOVE_PCT) : 0.2;
+        const strongMovePct = Number.isFinite(Number(process.env.LOWVOL_STRONG_MOVE_PCT)) ? Number(process.env.LOWVOL_STRONG_MOVE_PCT) : 0.8;
+        volAnom = detectVolumeAnomalyFromCandles({
+          candles,
+          lookback: Number.isFinite(Number(process.env.VOLUME_LOOKBACK)) ? Number(process.env.VOLUME_LOOKBACK) : 24,
+          zHigh,
+          wickRatioMin,
+          bodyMax,
+          lowMovePct,
+          strongMovePct
+        });
+      } catch {
+        volAnom = null;
+      }
+      if (volAnom?.ok && volAnom.lowConviction) {
+        reasons.push(
+          `Anomalías: movimiento fuerte con volumen débil (Low Conviction).`
+        );
+      }
+    }
+  }
+
+  const sentimentEnabled = !["0", "false", "off", "no"].includes(String(process.env.SENTIMENT_ENABLED ?? "1").trim().toLowerCase());
+  const sentimentMaxTitles = Number.isFinite(Number(process.env.SENTIMENT_MAX_TITLES))
+    ? Math.max(3, Math.min(40, Math.floor(Number(process.env.SENTIMENT_MAX_TITLES))))
+    : 12;
+
+  let sentimentScore = null;
+  let sentimentLabel = null;
+  let sentimentPolicy = null;
+  let headlinesUsed = null;
+  if (sentimentEnabled) {
+    let h = Array.isArray(headlines) ? headlines : null;
+    if (!h) {
+      try {
+        h = await fetchCryptoNewsHeadlines({ maxTitles: sentimentMaxTitles });
+      } catch {
+        h = [];
+      }
+    }
+    headlinesUsed = h;
+    const sent = sentimentScoreFromHeadlines(h);
+    sentimentScore = sent.score;
+    sentimentLabel = sent.label;
+    const policy = await resolveSentimentPolicy({ headlines: h, sentimentScore, sentimentLabel });
+    sentimentPolicy = policy;
+
+    if (policy?.crisisBlockAll && Number.isFinite(sentimentScore) && (sentimentScore <= policy.crisisLow || sentimentScore >= policy.crisisHigh)) {
+      reasons.push(
+        `Modo crisis: sentimiento extremo ${sentimentScore}/100 (${sentimentLabel}). Regla: bloquear todo (${formatNumber(policy.crisisLow, 0)}–${formatNumber(policy.crisisHigh, 0)}).`
+      );
+    }
+    if (side === "LONG" && Number.isFinite(sentimentScore) && sentimentScore < policy.blockLongBelow) {
+      reasons.push(
+        `Sentimiento negativo: ${sentimentScore}/100 (${sentimentLabel}) < ${formatNumber(policy.blockLongBelow, 0)}.`
+      );
+    }
+    if (side === "SHORT" && Number.isFinite(sentimentScore) && sentimentScore > policy.blockShortAbove) {
+      reasons.push(
+        `Sentimiento positivo: ${sentimentScore}/100 (${sentimentLabel}) > ${formatNumber(policy.blockShortAbove, 0)}.`
+      );
+    }
+  }
+
+  let riskGate = null;
+  if (reasons.length > 0) {
+    const apiKey = process.env.DEEPSEEK_KEY || process.env.DEEPSEEK_API_KEY || null;
+    const rgEnabled = !["0", "false", "off", "no"].includes(String(process.env.RISK_GATE_ENABLED ?? "1").trim().toLowerCase());
+    if (rgEnabled && apiKey) {
+      try {
+        await incrementAiStats({ avoided: 1 });
+      } catch {
+      }
+    }
+  }
+  if (reasons.length === 0) {
+    riskGate = await resolveRiskGateDecision({
+      chatId,
+      signal: s,
+      candles,
+      headlines: headlinesUsed,
+      sentiment: { score: sentimentScore, label: sentimentLabel },
+      sentimentPolicy,
+      trapScore
+    });
+    if (riskGate?.enabled && riskGate.allow === false) {
+      const rr = Array.isArray(riskGate.reasons) ? riskGate.reasons : [];
+      reasons.push(`Compuerta IA: BLOQUEAR (${String(riskGate.source ?? "ai")})`);
+      for (const r of rr) reasons.push(String(r));
+      const ns = riskGate.nextStepCondition && typeof riskGate.nextStepCondition === "object" ? riskGate.nextStepCondition : null;
+      const nsText = ns?.text ? String(ns.text).trim() : "";
+      if (nsText) reasons.push(`Plan: ${nsText}`);
+      const ta =
+        riskGate.targetEntryAdjustment && typeof riskGate.targetEntryAdjustment === "object" ? riskGate.targetEntryAdjustment : null;
+      const taText = ta?.text ? String(ta.text).trim() : "";
+      const taPrice = Number(ta?.price);
+      if (taText) reasons.push(`Entrada objetivo: ${taText}`);
+      else if (Number.isFinite(taPrice)) reasons.push(`Entrada objetivo: ${formatNumber(taPrice)}`);
+    }
+  }
+
+  const allow = reasons.length === 0;
+  return {
+    enabled: true,
+    allow,
+    reasons,
+    metrics: {
+      confidence: Number.isFinite(conf) ? conf : null,
+      trapScore: Number.isFinite(trapScore) ? trapScore : null,
+      sentimentScore: Number.isFinite(sentimentScore) ? sentimentScore : null,
+      sentimentLabel: sentimentLabel || null,
+      sentimentPolicySource: sentimentPolicyCache?.policy?.source ?? null,
+      sentimentBlockLongBelow: sentimentPolicyCache?.policy?.blockLongBelow ?? null,
+      sentimentBlockShortAbove: sentimentPolicyCache?.policy?.blockShortAbove ?? null,
+      sentimentCrisisLow: sentimentPolicyCache?.policy?.crisisLow ?? null,
+      sentimentCrisisHigh: sentimentPolicyCache?.policy?.crisisHigh ?? null,
+      sentimentCrisisBlockAll: sentimentPolicyCache?.policy?.crisisBlockAll ?? null,
+      btcCorrelation: Number.isFinite(btcCorr) ? btcCorr : null,
+      btcBeta: Number.isFinite(btcBeta) ? btcBeta : null,
+      btcVolToBtc: Number.isFinite(btcVolToBtc) ? btcVolToBtc : null,
+      btcRsi1h: Number.isFinite(btcRsi1h) ? btcRsi1h : null,
+      btcOverbought: btcOverbought === true ? true : btcOverbought === false ? false : null,
+      btcSellWall: btcSellWall === true ? true : btcSellWall === false ? false : null,
+      btcSellWallRatio: Number.isFinite(btcSellWallRatio) ? btcSellWallRatio : null,
+      whaleEnabled: whale?.enabled ?? null,
+      whaleBuyWall: whale?.buyWall ?? null,
+      whaleSellWall: whale?.sellWall ?? null,
+      whaleBuyWallRatio: Number.isFinite(Number(whale?.buyWallRatio)) ? Number(whale.buyWallRatio) : null,
+      whaleSellWallRatio: Number.isFinite(Number(whale?.sellWallRatio)) ? Number(whale.sellWallRatio) : null,
+      whaleSpoofing: whale?.spoofing ?? null,
+      volumeAnomalyEnabled: volAnom?.enabled ?? null,
+      volumeZScore: Number.isFinite(Number(volAnom?.zScore)) ? Number(volAnom.zScore) : null,
+      volumeAbsorption: volAnom?.absorption ?? null,
+      volumeLowConviction: volAnom?.lowConviction ?? null,
+      riskGateEnabled: riskGate?.enabled ?? null,
+      riskGateAllow: riskGate?.enabled ? riskGate.allow : null,
+      riskGateSource: riskGate?.source ?? null,
+      riskGateVerdict: riskGate?.verdict ?? null,
+      riskGateConfidence: Number.isFinite(Number(riskGate?.confidence)) ? Number(riskGate.confidence) : null,
+      riskGateEntryType: riskGate?.entryType ? String(riskGate.entryType) : null,
+      riskGateSizingFactor: Number.isFinite(Number(riskGate?.sizingFactor)) ? Number(riskGate.sizingFactor) : null,
+      riskGateToolsUsed: Array.isArray(riskGate?.toolsUsed) ? riskGate.toolsUsed.slice(0, 10) : null,
+      riskGateNextStepCondition:
+        riskGate?.nextStepCondition && typeof riskGate.nextStepCondition === "object" ? riskGate.nextStepCondition : null,
+      riskGateTargetEntryAdjustment:
+        riskGate?.targetEntryAdjustment && typeof riskGate.targetEntryAdjustment === "object"
+          ? riskGate.targetEntryAdjustment
+          : null,
+      riskGateRetryMaxCandles: Number.isFinite(Number(riskGate?.retry?.maxCandles)) ? Number(riskGate.retry.maxCandles) : null
+    }
+  };
+}
+
 export function runSelfTest() {
   const closes = [1, 1.01, 1.02, 1.0, 0.99, 1.03, 1.05, 1.04, 1.06, 1.07];
   const e = ema(closes, 3);
@@ -2001,11 +3066,14 @@ export async function openPaperPosition({
   tp,
   tp1,
   tp2,
+  remainingPct,
   strategyName,
   strategyReason,
   source
 }) {
   const id = `pp_${nowMs()}_${Math.random().toString(16).slice(2)}`;
+  const weightRaw = Number(remainingPct);
+  const weight = Number.isFinite(weightRaw) ? Math.max(1, Math.min(100, Math.floor(weightRaw))) : 100;
   const pos = {
     id,
     chatId,
@@ -2023,7 +3091,7 @@ export async function openPaperPosition({
     strategyName: strategyName ?? null,
     strategyReason: strategyReason ?? null,
     tp1Hit: false,
-    remainingPct: 100,
+    remainingPct: weight,
     source: source ?? "signal",
     openedAt: nowMs()
   };
@@ -2515,16 +3583,26 @@ export function detectWhaleTrap({ candles, side, window = 60 } = {}) {
 export async function consultDeepseek({ apiKey, promptText, model = "deepseek-chat", temperature = 0.2 }) {
   const key = String(apiKey ?? "").trim();
   if (!key) throw new Error("Falta DEEPSEEK_KEY");
+  const sys = "Responde SOLO JSON compacto. Sin prosa. Si hay ENGRAM_RECALL o LECCIONES, úsalas para evitar repetir errores. Prioriza seguridad y coste: decide con lo mínimo.";
+  const usr = String(promptText ?? "");
+  const charsPerToken = Number.isFinite(Number(process.env.AI_CHARS_PER_TOKEN))
+    ? Math.max(1, Math.min(20, Number(process.env.AI_CHARS_PER_TOKEN)))
+    : 4;
+  const inChars = sys.length + usr.length;
+  const inTokens = Math.max(0, Math.floor(inChars / charsPerToken));
+  try {
+    await incrementAiStats({ calls: 1, tokensIn: inTokens });
+  } catch {
+  }
 
   const payload = {
     model,
     messages: [
       {
         role: "system",
-        content:
-          "Eres un Trader Quant. Responde siempre en JSON puro. Si existe ENGRAM_RECALL en el prompt, úsalo como memoria relevante para evitar errores y aplicar reglas."
+        content: sys
       },
-      { role: "user", content: String(promptText ?? "") }
+      { role: "user", content: usr }
     ],
     response_format: { type: "json_object" },
     temperature
@@ -2547,6 +3625,12 @@ export async function consultDeepseek({ apiKey, promptText, model = "deepseek-ch
 
   const json = extractJsonObject(bodyText);
   const content = json?.choices?.[0]?.message?.content;
+  const outChars = String(content ?? bodyText ?? "").length;
+  const outTokens = Math.max(0, Math.floor(outChars / charsPerToken));
+  try {
+    await incrementAiStats({ tokensOut: outTokens });
+  } catch {
+  }
   const parsed = extractJsonObject(content);
   if (!parsed) throw new Error("DeepSeek respondió pero no devolvió JSON válido");
   return parsed;
@@ -2578,21 +3662,1134 @@ function extractRssTitles(xmlText, maxTitles = 8) {
   return uniq;
 }
 
+function parseEnvList(raw) {
+  return String(raw ?? "")
+    .split(/[,\s]+/g)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+async function fetchWithTimeout(url, { timeoutMs } = {}) {
+  const ms = Number.isFinite(Number(timeoutMs)) ? Math.max(500, Math.floor(Number(timeoutMs))) : 5000;
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { method: "GET", signal: controller.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function fetchRss(url, maxTitles = 6) {
-  const res = await fetch(url, { method: "GET" });
+  const timeoutMs = Number.isFinite(Number(process.env.NEWS_HTTP_TIMEOUT_MS))
+    ? Number(process.env.NEWS_HTTP_TIMEOUT_MS)
+    : 5000;
+  const res = await fetchWithTimeout(url, { timeoutMs });
   const txt = await res.text();
   if (!res.ok) return [];
   return extractRssTitles(txt, maxTitles);
 }
 
-export async function fetchCryptoNewsHeadlines({ maxTitles = 10 } = {}) {
-  const urls = [
-    "https://www.coindesk.com/arc/outboundfeeds/rss/",
-    "https://cointelegraph.com/rss"
+const newsCache = { ts: 0, headlines: [] };
+const sentimentPolicyCache = { ts: 0, policy: null };
+const riskGateCache = new Map();
+const btcStatsCache = new Map();
+const whalePressureCache = new Map();
+const whaleSpoofCache = new Map();
+const volumeAnomalyCache = new Map();
+
+function clamp01(x) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+
+function pearsonCorrelation(x, y) {
+  const a = Array.isArray(x) ? x : [];
+  const b = Array.isArray(y) ? y : [];
+  const n = Math.min(a.length, b.length);
+  if (n < 10) return null;
+  let sx = 0;
+  let sy = 0;
+  let sxx = 0;
+  let syy = 0;
+  let sxy = 0;
+  for (let i = 0; i < n; i += 1) {
+    const xi = Number(a[i]);
+    const yi = Number(b[i]);
+    if (!Number.isFinite(xi) || !Number.isFinite(yi)) return null;
+    sx += xi;
+    sy += yi;
+    sxx += xi * xi;
+    syy += yi * yi;
+    sxy += xi * yi;
+  }
+  const cov = sxy - (sx * sy) / n;
+  const vx = sxx - (sx * sx) / n;
+  const vy = syy - (sy * sy) / n;
+  if (vx <= 0 || vy <= 0) return null;
+  return cov / Math.sqrt(vx * vy);
+}
+
+function toReturns(closes) {
+  const arr = Array.isArray(closes) ? closes : [];
+  const out = [];
+  for (let i = 1; i < arr.length; i += 1) {
+    const a = Number(arr[i - 1]);
+    const b = Number(arr[i]);
+    if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= 0) return [];
+    out.push(Math.log(b / a));
+  }
+  return out;
+}
+
+function betaFromReturns(altR, btcR) {
+  const a = Array.isArray(altR) ? altR : [];
+  const b = Array.isArray(btcR) ? btcR : [];
+  const n = Math.min(a.length, b.length);
+  if (n < 10) return null;
+  let sb = 0;
+  let sa = 0;
+  for (let i = 0; i < n; i += 1) {
+    sb += b[i];
+    sa += a[i];
+  }
+  const mb = sb / n;
+  const ma = sa / n;
+  let cov = 0;
+  let vb = 0;
+  for (let i = 0; i < n; i += 1) {
+    const db = b[i] - mb;
+    const da = a[i] - ma;
+    cov += da * db;
+    vb += db * db;
+  }
+  if (vb <= 0) return null;
+  return cov / vb;
+}
+
+function stddev(arr) {
+  const a = Array.isArray(arr) ? arr : [];
+  const n = a.length;
+  if (n < 10) return null;
+  let s = 0;
+  for (let i = 0; i < n; i += 1) s += a[i];
+  const m = s / n;
+  let v = 0;
+  for (let i = 0; i < n; i += 1) {
+    const d = a[i] - m;
+    v += d * d;
+  }
+  return Math.sqrt(v / n);
+}
+
+export async function fetchOrderBook({ exchange, symbol, limit = 50 }) {
+  const ex = getExchange(exchange);
+  if (!ex.has?.fetchOrderBook) throw new Error(`El exchange ${exchange} no soporta order book`);
+  const maxAttempts = Number.isFinite(Number(process.env.FETCH_RETRY_ATTEMPTS))
+    ? Math.max(1, Math.min(5, Math.floor(Number(process.env.FETCH_RETRY_ATTEMPTS))))
+    : 4;
+  let lastErr = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const m = await ex.loadMarkets();
+      const normalizedSymbol = resolveMarketSymbol(m, symbol);
+      if (!normalizedSymbol) throw new Error(`Símbolo no encontrado en ${exchange}: ${symbol}`);
+      const ob = await ex.fetchOrderBook(normalizedSymbol, Math.max(5, Math.min(200, Number(limit) || 50)));
+      return { exchange, symbol: normalizedSymbol, orderbook: ob };
+    } catch (e) {
+      lastErr = e;
+      if (!isRetryableExchangeError(e) || attempt === maxAttempts - 1) break;
+      if (proxyPool.length && shouldRotateProxy(e)) {
+        const p = nextProxy();
+        if (p) ex.proxy = p;
+      }
+      const backoff = Math.min(8000, 2000 * 2 ** attempt);
+      await sleep(backoff);
+    }
+  }
+  const status = extractHttpStatus(lastErr);
+  if (status === 451) {
+    throw new Error(hintForRegionBlock(exchange));
+  }
+  throw lastErr ?? new Error("fetchOrderBook falló");
+}
+
+function medianNumber(values) {
+  const arr = Array.isArray(values) ? values.filter((x) => Number.isFinite(Number(x))) : [];
+  if (!arr.length) return null;
+  const sorted = arr.map((x) => Number(x)).sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+export async function getWhalePressure({ exchange, symbol } = {}) {
+  const enabled = !["0", "false", "off", "no"].includes(
+    String(process.env.WHALE_TRACKER_ENABLED ?? "1").trim().toLowerCase()
+  );
+  if (!enabled) return { enabled: false };
+
+  const ex = String(exchange ?? DEFAULT_EXCHANGE).trim().toLowerCase() || DEFAULT_EXCHANGE;
+  const sym = String(symbol ?? "").trim();
+  if (!sym) return { enabled: true, ok: false, reason: "missing_symbol" };
+
+  const ttlSeconds = Number.isFinite(Number(process.env.WHALE_PRESSURE_CACHE_SECONDS))
+    ? Math.max(0, Math.floor(Number(process.env.WHALE_PRESSURE_CACHE_SECONDS)))
+    : 5;
+  const key = `${ex}|${sym}`;
+  const now = nowMs();
+  const cached = whalePressureCache.get(key);
+  if (ttlSeconds > 0 && cached && now - cached.ts < ttlSeconds * 1000) return cached.value;
+
+  const depth = Number.isFinite(Number(process.env.WHALE_ORDERBOOK_LIMIT))
+    ? Math.max(10, Math.min(200, Math.floor(Number(process.env.WHALE_ORDERBOOK_LIMIT))))
+    : 50;
+  const distPct = Number.isFinite(Number(process.env.WHALE_WALL_DIST_PCT))
+    ? Math.max(0.05, Math.min(5, Number(process.env.WHALE_WALL_DIST_PCT)))
+    : 0.6;
+  const wallRatioTh = Number.isFinite(Number(process.env.WHALE_WALL_RATIO))
+    ? Math.max(1, Math.min(50, Number(process.env.WHALE_WALL_RATIO)))
+    : 6;
+  const spoofWindowMs = Number.isFinite(Number(process.env.WHALE_SPOOF_WINDOW_MS))
+    ? Math.max(1000, Math.min(10 * 60 * 1000, Math.floor(Number(process.env.WHALE_SPOOF_WINDOW_MS))))
+    : 120000;
+  const spoofShrink = Number.isFinite(Number(process.env.WHALE_SPOOF_SHRINK_FACTOR))
+    ? Math.max(0.1, Math.min(1, Number(process.env.WHALE_SPOOF_SHRINK_FACTOR)))
+    : 0.3;
+
+  let ob;
+  try {
+    ob = await fetchOrderBook({ exchange: ex, symbol: sym, limit: depth });
+  } catch (e) {
+    const value = { enabled: true, ok: false, reason: e?.message ?? String(e) };
+    whalePressureCache.set(key, { ts: now, value });
+    return value;
+  }
+  const bids = Array.isArray(ob?.orderbook?.bids) ? ob.orderbook.bids.slice(0, depth) : [];
+  const asks = Array.isArray(ob?.orderbook?.asks) ? ob.orderbook.asks.slice(0, depth) : [];
+  const bestBid = Number(bids?.[0]?.[0]);
+  const bestAsk = Number(asks?.[0]?.[0]);
+  const mid = Number.isFinite(bestBid) && Number.isFinite(bestAsk) ? (bestBid + bestAsk) / 2 : Number.isFinite(bestBid) ? bestBid : bestAsk;
+
+  const bidBand = Number.isFinite(mid) ? mid * (1 - distPct / 100) : null;
+  const askBand = Number.isFinite(mid) ? mid * (1 + distPct / 100) : null;
+  const bandBids = bidBand === null ? bids : bids.filter((l) => Number(l?.[0]) >= bidBand);
+  const bandAsks = askBand === null ? asks : asks.filter((l) => Number(l?.[0]) <= askBand);
+
+  const bidNot = bandBids
+    .map((l) => {
+      const px = Number(l?.[0]);
+      const amt = Number(l?.[1]);
+      return Number.isFinite(px) && Number.isFinite(amt) ? px * amt : null;
+    })
+    .filter((x) => Number.isFinite(x) && x > 0);
+  const askNot = bandAsks
+    .map((l) => {
+      const px = Number(l?.[0]);
+      const amt = Number(l?.[1]);
+      return Number.isFinite(px) && Number.isFinite(amt) ? px * amt : null;
+    })
+    .filter((x) => Number.isFinite(x) && x > 0);
+
+  const sumBid = bidNot.reduce((a, b) => a + b, 0);
+  const sumAsk = askNot.reduce((a, b) => a + b, 0);
+  const total = sumBid + sumAsk;
+  const buyPressure = total > 0 ? sumBid / total : null;
+  const sellPressure = total > 0 ? sumAsk / total : null;
+
+  const bidMed = medianNumber(bidNot);
+  const askMed = medianNumber(askNot);
+  const bidMax = bidNot.length ? Math.max(...bidNot) : null;
+  const askMax = askNot.length ? Math.max(...askNot) : null;
+  const buyWallRatio = Number.isFinite(bidMax) && Number.isFinite(bidMed) && bidMed > 0 ? bidMax / bidMed : null;
+  const sellWallRatio = Number.isFinite(askMax) && Number.isFinite(askMed) && askMed > 0 ? askMax / askMed : null;
+
+  const buyWall = Number.isFinite(buyWallRatio) ? buyWallRatio >= wallRatioTh : null;
+  const sellWall = Number.isFinite(sellWallRatio) ? sellWallRatio >= wallRatioTh : null;
+
+  const buyWallLevel = buyWall === true
+    ? bandBids
+        .map((l) => ({ px: Number(l?.[0]), notional: Number(l?.[0]) * Number(l?.[1]) }))
+        .filter((x) => Number.isFinite(x.px) && Number.isFinite(x.notional))
+        .sort((a, b) => b.notional - a.notional)[0] ?? null
+    : null;
+  const sellWallLevel = sellWall === true
+    ? bandAsks
+        .map((l) => ({ px: Number(l?.[0]), notional: Number(l?.[0]) * Number(l?.[1]) }))
+        .filter((x) => Number.isFinite(x.px) && Number.isFinite(x.notional))
+        .sort((a, b) => b.notional - a.notional)[0] ?? null
+    : null;
+
+  let spoofing = null;
+  const prev = whaleSpoofCache.get(key);
+  if (prev && now - prev.ts <= spoofWindowMs) {
+    const prevBuy = Number(prev.buyWallNotional);
+    const prevSell = Number(prev.sellWallNotional);
+    const nowBuy = Number(buyWallLevel?.notional);
+    const nowSell = Number(sellWallLevel?.notional);
+    const buyGone = Number.isFinite(prevBuy) && prevBuy > 0 && (!Number.isFinite(nowBuy) || nowBuy <= prevBuy * spoofShrink);
+    const sellGone = Number.isFinite(prevSell) && prevSell > 0 && (!Number.isFinite(nowSell) || nowSell <= prevSell * spoofShrink);
+    if (buyGone && sellGone) spoofing = "BOTH";
+    else if (buyGone) spoofing = "BUY";
+    else if (sellGone) spoofing = "SELL";
+  }
+
+  const value = {
+    enabled: true,
+    ok: true,
+    symbol: ob?.symbol ?? sym,
+    mid: Number.isFinite(mid) ? mid : null,
+    buyPressure: Number.isFinite(buyPressure) ? buyPressure : null,
+    sellPressure: Number.isFinite(sellPressure) ? sellPressure : null,
+    buyWall,
+    sellWall,
+    buyWallRatio: Number.isFinite(buyWallRatio) ? buyWallRatio : null,
+    sellWallRatio: Number.isFinite(sellWallRatio) ? sellWallRatio : null,
+    buyWallLevel: buyWallLevel && Number.isFinite(buyWallLevel.px) ? buyWallLevel : null,
+    sellWallLevel: sellWallLevel && Number.isFinite(sellWallLevel.px) ? sellWallLevel : null,
+    spoofing
+  };
+  whalePressureCache.set(key, { ts: now, value });
+  whaleSpoofCache.set(key, {
+    ts: now,
+    buyWallNotional: buyWallLevel?.notional ?? null,
+    sellWallNotional: sellWallLevel?.notional ?? null
+  });
+  return value;
+}
+
+function volumeStats(values) {
+  const arr = Array.isArray(values) ? values.map((x) => Number(x)).filter((v) => Number.isFinite(v) && v >= 0) : [];
+  const n = arr.length;
+  if (n < 10) return { mean: null, stdev: null };
+  const mean = arr.reduce((a, b) => a + b, 0) / n;
+  const v = arr.reduce((a, b) => a + (b - mean) * (b - mean), 0) / n;
+  const stdev = Math.sqrt(v);
+  return { mean, stdev };
+}
+
+function detectVolumeAnomalyFromCandles({ candles, lookback, zHigh, wickRatioMin, bodyMax, lowMovePct, strongMovePct } = {}) {
+  const arr = Array.isArray(candles) ? candles : [];
+  const lb = Number.isFinite(Number(lookback)) ? Math.max(10, Math.min(200, Math.floor(Number(lookback)))) : 24;
+  if (arr.length < lb + 5) return { ok: false };
+  const last = arr[arr.length - 1];
+  const prev = arr.slice(Math.max(0, arr.length - 1 - lb), arr.length - 1);
+  const lastVol = Number(last?.[5]);
+  const prevVols = prev.map((c) => Number(c?.[5]));
+  const { mean, stdev } = volumeStats(prevVols);
+  const z = Number.isFinite(lastVol) && Number.isFinite(mean) && Number.isFinite(stdev) && stdev > 0 ? (lastVol - mean) / stdev : null;
+
+  const open = Number(last?.[1]);
+  const high = Number(last?.[2]);
+  const low = Number(last?.[3]);
+  const close = Number(last?.[4]);
+  const range = Number.isFinite(high) && Number.isFinite(low) ? Math.max(0, high - low) : null;
+  const body = Number.isFinite(open) && Number.isFinite(close) ? Math.abs(close - open) : null;
+  const wickRatio = Number.isFinite(range) && range > 0 && Number.isFinite(body) ? (range - body) / range : null;
+  const bodyRatio = Number.isFinite(range) && range > 0 && Number.isFinite(body) ? body / range : null;
+  const movePct = Number.isFinite(open) && open > 0 && Number.isFinite(body) ? (body / open) * 100 : null;
+
+  const zHi = Number.isFinite(Number(zHigh)) ? Number(zHigh) : 2.5;
+  const wickMin = Number.isFinite(Number(wickRatioMin)) ? Math.max(0, Math.min(1, Number(wickRatioMin))) : 0.7;
+  const bodyMaxR = Number.isFinite(Number(bodyMax)) ? Math.max(0.05, Math.min(1, Number(bodyMax))) : 0.3;
+  const lowMove = Number.isFinite(Number(lowMovePct)) ? Math.max(0, Math.min(5, Number(lowMovePct))) : 0.2;
+  const strongMove = Number.isFinite(Number(strongMovePct)) ? Math.max(0, Math.min(20, Number(strongMovePct))) : 0.8;
+
+  const capitalInjection = Number.isFinite(z) ? z >= zHi : false;
+  const absorption = capitalInjection && Number.isFinite(wickRatio) && wickRatio >= wickMin && Number.isFinite(bodyRatio) && bodyRatio <= bodyMaxR;
+  const effortNoResult = capitalInjection && Number.isFinite(movePct) && movePct <= lowMove;
+  const strongMoveLowVol = Number.isFinite(movePct) && movePct >= strongMove && (!Number.isFinite(z) || z < 0.2);
+
+  return {
+    ok: true,
+    zScore: Number.isFinite(z) ? z : null,
+    meanVol: Number.isFinite(mean) ? mean : null,
+    lastVol: Number.isFinite(lastVol) ? lastVol : null,
+    wickRatio: Number.isFinite(wickRatio) ? wickRatio : null,
+    movePct: Number.isFinite(movePct) ? movePct : null,
+    capitalInjection,
+    absorption: absorption || effortNoResult,
+    lowConviction: strongMoveLowVol
+  };
+}
+
+export async function detectVolumeAnomaly({ exchange, symbol, timeframe, lookback = 24 } = {}) {
+  const enabled = !["0", "false", "off", "no"].includes(
+    String(process.env.VOLUME_ANOMALY_ENABLED ?? "1").trim().toLowerCase()
+  );
+  if (!enabled) return { enabled: false };
+  const ex = String(exchange ?? DEFAULT_EXCHANGE).trim().toLowerCase() || DEFAULT_EXCHANGE;
+  const sym = String(symbol ?? "").trim();
+  const tf = String(timeframe ?? "15m").trim().toLowerCase() || "15m";
+  if (!sym) return { enabled: true, ok: false, reason: "missing_symbol" };
+
+  const ttlSeconds = Number.isFinite(Number(process.env.VOLUME_ANOMALY_CACHE_SECONDS))
+    ? Math.max(0, Math.floor(Number(process.env.VOLUME_ANOMALY_CACHE_SECONDS)))
+    : 30;
+  const key = `${ex}|${sym}|${tf}|${lookback}`;
+  const now = nowMs();
+  const cached = volumeAnomalyCache.get(key);
+  if (ttlSeconds > 0 && cached && now - cached.ts < ttlSeconds * 1000) return cached.value;
+
+  const zHigh = Number.isFinite(Number(process.env.VOLUME_Z_HIGH)) ? Number(process.env.VOLUME_Z_HIGH) : 2.5;
+  const wickRatioMin = Number.isFinite(Number(process.env.ABSORPTION_WICK_RATIO)) ? Number(process.env.ABSORPTION_WICK_RATIO) : 0.7;
+  const bodyMax = Number.isFinite(Number(process.env.ABSORPTION_BODY_MAX)) ? Number(process.env.ABSORPTION_BODY_MAX) : 0.3;
+  const lowMovePct = Number.isFinite(Number(process.env.ABSORPTION_LOW_MOVE_PCT)) ? Number(process.env.ABSORPTION_LOW_MOVE_PCT) : 0.2;
+  const strongMovePct = Number.isFinite(Number(process.env.LOWVOL_STRONG_MOVE_PCT)) ? Number(process.env.LOWVOL_STRONG_MOVE_PCT) : 0.8;
+
+  let data;
+  try {
+    data = await fetchCandles({ exchange: ex, symbol: sym, timeframe: tf, limit: Math.max(120, lookback + 40) });
+  } catch (e) {
+    const value = { enabled: true, ok: false, reason: e?.message ?? String(e) };
+    volumeAnomalyCache.set(key, { ts: now, value });
+    return value;
+  }
+
+  const res = detectVolumeAnomalyFromCandles({
+    candles: data?.candles,
+    lookback,
+    zHigh,
+    wickRatioMin,
+    bodyMax,
+    lowMovePct,
+    strongMovePct
+  });
+  const value = { enabled: true, symbol: data?.symbol ?? sym, timeframe: tf, ...res };
+  volumeAnomalyCache.set(key, { ts: now, value });
+  return value;
+}
+
+export async function computeBtcCorrelationBeta({ exchange, symbol, timeframe, window = 50 } = {}) {
+  const ex = String(exchange ?? DEFAULT_EXCHANGE).trim().toLowerCase() || DEFAULT_EXCHANGE;
+  const sym = String(symbol ?? "").trim();
+  const tf = String(timeframe ?? "15m").trim().toLowerCase() || "15m";
+  const w = Number.isFinite(Number(window)) ? Math.max(30, Math.min(300, Math.floor(Number(window)))) : 50;
+  const ttlSeconds = Number.isFinite(Number(process.env.BTC_BETA_CACHE_SECONDS))
+    ? Math.max(0, Math.floor(Number(process.env.BTC_BETA_CACHE_SECONDS)))
+    : 180;
+  const key = `${ex}|${sym}|${tf}|${w}`;
+  const now = nowMs();
+  const cached = btcStatsCache.get(key);
+  if (ttlSeconds > 0 && cached && now - cached.ts < ttlSeconds * 1000) return cached.value;
+
+  const btcSymbol = String(process.env.BTC_SYMBOL ?? "BTC/USDT").trim() || "BTC/USDT";
+  const a = await fetchCandles({ exchange: ex, symbol: sym, timeframe: tf, limit: Math.max(w + 5, 60) });
+  const b = await fetchCandles({ exchange: ex, symbol: btcSymbol, timeframe: tf, limit: Math.max(w + 5, 60) });
+  const aCloses = (Array.isArray(a?.candles) ? a.candles : []).map((c) => Number(c?.[4])).filter((x) => Number.isFinite(x));
+  const bCloses = (Array.isArray(b?.candles) ? b.candles : []).map((c) => Number(c?.[4])).filter((x) => Number.isFinite(x));
+  const n = Math.min(aCloses.length, bCloses.length, w);
+  if (n < 30) return { ok: false, correlation: null, beta: null, volToBtc: null, window: n, timeframe: tf };
+
+  const aSlice = aCloses.slice(-n);
+  const bSlice = bCloses.slice(-n);
+  const corr = pearsonCorrelation(aSlice, bSlice);
+  const aR = toReturns(aSlice);
+  const bR = toReturns(bSlice);
+  const beta = betaFromReturns(aR, bR);
+  const aStd = stddev(aR);
+  const bStd = stddev(bR);
+  const volToBtc = Number.isFinite(aStd) && Number.isFinite(bStd) && bStd > 0 ? aStd / bStd : null;
+
+  const value = {
+    ok: true,
+    correlation: Number.isFinite(corr) ? corr : null,
+    beta: Number.isFinite(beta) ? beta : null,
+    volToBtc: Number.isFinite(volToBtc) ? volToBtc : null,
+    window: n,
+    timeframe: tf,
+    btcSymbol: b?.symbol ?? btcSymbol,
+    symbol: a?.symbol ?? sym
+  };
+  btcStatsCache.set(key, { ts: now, value });
+  return value;
+}
+
+export async function fetchBtcMarketWeakness({ exchange } = {}) {
+  const ex = String(exchange ?? DEFAULT_EXCHANGE).trim().toLowerCase() || DEFAULT_EXCHANGE;
+  const ttlSeconds = Number.isFinite(Number(process.env.BTC_WEAKNESS_CACHE_SECONDS))
+    ? Math.max(0, Math.floor(Number(process.env.BTC_WEAKNESS_CACHE_SECONDS)))
+    : 30;
+  const key = `btc_weak|${ex}`;
+  const now = nowMs();
+  const cached = btcStatsCache.get(key);
+  if (ttlSeconds > 0 && cached && now - cached.ts < ttlSeconds * 1000) return cached.value;
+
+  const btcSymbol = String(process.env.BTC_SYMBOL ?? "BTC/USDT").trim() || "BTC/USDT";
+  let rsi1h = null;
+  try {
+    const c = await fetchCandles({ exchange: ex, symbol: btcSymbol, timeframe: "1h", limit: 120 });
+    const closes = (Array.isArray(c?.candles) ? c.candles : []).map((x) => Number(x?.[4])).filter((v) => Number.isFinite(v));
+    const arr = rsi(closes, 14);
+    rsi1h = Number(arr?.[arr.length - 1]);
+    if (!Number.isFinite(rsi1h)) rsi1h = null;
+  } catch {
+    rsi1h = null;
+  }
+
+  const overbought = Number.isFinite(Number(process.env.BTC_RSI_OVERBOUGHT))
+    ? Number(process.env.BTC_RSI_OVERBOUGHT)
+    : 70;
+  const isOverbought = Number.isFinite(rsi1h) ? rsi1h >= overbought : false;
+
+  let sellWall = null;
+  let sellWallRatio = null;
+  try {
+    const depth = Number.isFinite(Number(process.env.BTC_SELL_WALL_DEPTH))
+      ? Math.max(5, Math.min(100, Math.floor(Number(process.env.BTC_SELL_WALL_DEPTH))))
+      : 20;
+    const ratioTh = Number.isFinite(Number(process.env.BTC_SELL_WALL_RATIO))
+      ? Math.max(1, Math.min(50, Number(process.env.BTC_SELL_WALL_RATIO)))
+      : 6;
+    const ob = await fetchOrderBook({ exchange: ex, symbol: btcSymbol, limit: Math.max(depth, 50) });
+    const asks = Array.isArray(ob?.orderbook?.asks) ? ob.orderbook.asks.slice(0, depth) : [];
+    const notionals = asks
+      .map((a) => {
+        const px = Number(a?.[0]);
+        const amt = Number(a?.[1]);
+        return Number.isFinite(px) && Number.isFinite(amt) ? px * amt : null;
+      })
+      .filter((x) => Number.isFinite(x) && x > 0);
+    if (notionals.length >= 8) {
+      const sorted = notionals.slice().sort((x, y) => x - y);
+      const mid = Math.floor(sorted.length / 2);
+      const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      const max = Math.max(...notionals);
+      sellWallRatio = Number.isFinite(median) && median > 0 ? max / median : null;
+      sellWall = Number.isFinite(sellWallRatio) ? sellWallRatio >= ratioTh : null;
+    }
+  } catch {
+    sellWall = null;
+    sellWallRatio = null;
+  }
+
+  const value = {
+    btcSymbol,
+    rsi1h,
+    overbought: isOverbought,
+    overboughtLevel: overbought,
+    sellWall,
+    sellWallRatio
+  };
+  btcStatsCache.set(key, { ts: now, value });
+  return value;
+}
+
+function sentimentScoreFromHeadlines(headlines) {
+  const titles = Array.isArray(headlines) ? headlines : [];
+  if (!titles.length) return { score: 50, label: "NEUTRAL", hits: [] };
+
+  const neg = [
+    { re: /\b(hack|hacked|exploit|breach)\b/i, w: -18, tag: "hack" },
+    { re: /\b(bankrupt|bankruptcy|insolven|collapse)\b/i, w: -18, tag: "collapse" },
+    { re: /\b(SEC|lawsuit|sued|probe|investigation|charges|indict)\b/i, w: -14, tag: "regulatory" },
+    { re: /\b(crackdown|ban|banned|prohibit|shutdown)\b/i, w: -16, tag: "ban" },
+    { re: /\b(rate hike|hawkish|tightening)\b/i, w: -10, tag: "hawkish" },
+    { re: /\b(recession|inflation|cpi|unemployment)\b/i, w: -8, tag: "macro_risk" },
+    { re: /\b(liquidat|forced sell|margin call)\b/i, w: -12, tag: "liquidations" },
+    { re: /\b(plunge|crash|dump|selloff|bloodbath)\b/i, w: -12, tag: "selloff" },
+    { re: /\b(outflow|capitulation)\b/i, w: -10, tag: "capitulation" }
   ];
-  const perFeed = Math.max(2, Math.ceil(Number(maxTitles) / urls.length));
+
+  const pos = [
+    { re: /\b(ETF|approval|approved)\b/i, w: +14, tag: "etf" },
+    { re: /\b(adoption|partnership|integration)\b/i, w: +10, tag: "adoption" },
+    { re: /\b(launch|released|upgrade|mainnet)\b/i, w: +8, tag: "build" },
+    { re: /\b(bullish|breakout|rally|surge|pump)\b/i, w: +10, tag: "rally" },
+    { re: /\b(inflow|accumulat|buying)\b/i, w: +8, tag: "inflows" },
+    { re: /\b(rate cut|dovish|easing)\b/i, w: +10, tag: "dovish" }
+  ];
+
+  let score = 50;
+  const hits = [];
+  for (const t of titles.slice(0, 30)) {
+    const s = String(t ?? "");
+    for (const r of neg) {
+      if (r.re.test(s)) {
+        score += r.w;
+        hits.push({ tag: r.tag, w: r.w, title: s.slice(0, 140) });
+      }
+    }
+    for (const r of pos) {
+      if (r.re.test(s)) {
+        score += r.w;
+        hits.push({ tag: r.tag, w: r.w, title: s.slice(0, 140) });
+      }
+    }
+  }
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  const label = score <= 35 ? "MIEDO" : score >= 65 ? "CODICIA" : "NEUTRAL";
+  return { score, label, hits };
+}
+
+function clampInt(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+function normalizeSentimentPolicy(raw, fallback) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const fb = fallback && typeof fallback === "object" ? fallback : {};
+  const blockLongBelow = clampInt(src.blockLongBelow, 0, 100, clampInt(fb.blockLongBelow, 0, 100, 40));
+  const blockShortAbove = clampInt(src.blockShortAbove, 0, 100, clampInt(fb.blockShortAbove, 0, 100, 60));
+  const crisisLow = clampInt(src.crisisLow, 0, 100, clampInt(fb.crisisLow, 0, 100, 25));
+  const crisisHigh = clampInt(src.crisisHigh, 0, 100, clampInt(fb.crisisHigh, 0, 100, 75));
+  const crisisBlockAll =
+    src.crisisBlockAll === true ||
+    src.crisisBlockAll === 1 ||
+    String(src.crisisBlockAll ?? "")
+      .trim()
+      .toLowerCase() === "true";
+
+  const low = Math.min(crisisLow, crisisHigh);
+  const high = Math.max(crisisLow, crisisHigh);
+  const out = {
+    blockLongBelow,
+    blockShortAbove,
+    crisisBlockAll: crisisBlockAll || false,
+    crisisLow: low,
+    crisisHigh: high
+  };
+
+  if (out.crisisBlockAll) {
+    if (out.crisisLow > out.blockLongBelow) out.crisisLow = out.blockLongBelow;
+    if (out.crisisHigh < out.blockShortAbove) out.crisisHigh = out.blockShortAbove;
+  }
+
+  return out;
+}
+
+async function resolveSentimentPolicy({ headlines, sentimentScore, sentimentLabel } = {}) {
+  const ttlSeconds = Number.isFinite(Number(process.env.SENTIMENT_POLICY_CACHE_SECONDS))
+    ? Math.max(0, Math.floor(Number(process.env.SENTIMENT_POLICY_CACHE_SECONDS)))
+    : 300;
+  const now = nowMs();
+  if (ttlSeconds > 0 && sentimentPolicyCache.ts && now - sentimentPolicyCache.ts < ttlSeconds * 1000 && sentimentPolicyCache.policy) {
+    return { ...sentimentPolicyCache.policy, source: sentimentPolicyCache.policy.source ?? "cache" };
+  }
+
+  const fallback = {
+    blockLongBelow: clampInt(process.env.SENTIMENT_BLOCK_LONG_BELOW, 0, 100, 40),
+    blockShortAbove: clampInt(process.env.SENTIMENT_BLOCK_SHORT_ABOVE, 0, 100, 60),
+    crisisBlockAll: !["0", "false", "off", "no"].includes(String(process.env.SENTIMENT_CRISIS_BLOCK_ALL ?? "1").trim().toLowerCase()),
+    crisisLow: clampInt(process.env.SENTIMENT_CRISIS_LOW, 0, 100, 25),
+    crisisHigh: clampInt(process.env.SENTIMENT_CRISIS_HIGH, 0, 100, 75)
+  };
+
+  const aiEnabled = !["0", "false", "off", "no"].includes(
+    String(process.env.SENTIMENT_AI_THRESHOLDS ?? "1").trim().toLowerCase()
+  );
+  const apiKey = process.env.DEEPSEEK_KEY || process.env.DEEPSEEK_API_KEY || null;
+  const titles = Array.isArray(headlines) ? headlines.slice(0, 20) : [];
+
+  if (!aiEnabled || !apiKey || !titles.length) {
+    const policy = { ...normalizeSentimentPolicy(fallback, fallback), source: aiEnabled && !apiKey ? "env_no_key" : "env" };
+    sentimentPolicyCache.ts = now;
+    sentimentPolicyCache.policy = policy;
+    return policy;
+  }
+
+  try {
+    const prompt = [
+      "TAREA: Ajusta umbrales de filtro de sentimiento para gestionar riesgo intradía en crypto.",
+      "REGLAS:",
+      "- Devuelve SOLO JSON.",
+      "- Todos los umbrales son enteros 0-100.",
+      "- blockLongBelow: si score < este valor, bloquear LONGs.",
+      "- blockShortAbove: si score > este valor, bloquear SHORTs.",
+      "- crisisBlockAll: true/false.",
+      "- crisisLow/crisisHigh: si score <= crisisLow o >= crisisHigh y crisisBlockAll=true, bloquear TODO.",
+      "- Debe ser CONSERVADOR. Si hay hacks/regulación/ban, sube la protección (más bloqueo).",
+      "",
+      `SENTIMENT_SCORE_ACTUAL: ${Number.isFinite(Number(sentimentScore)) ? Math.round(Number(sentimentScore)) : "N/A"}`,
+      `SENTIMENT_LABEL: ${String(sentimentLabel ?? "")}`,
+      `FALLBACK: ${JSON.stringify(fallback)}`,
+      `TITULARES: ${titles.join(" | ")}`
+    ].join("\n");
+
+    const ai = await consultDeepseek({ apiKey, promptText: prompt, temperature: 0.2 });
+    const raw = {
+      blockLongBelow: ai?.blockLongBelow ?? ai?.block_long_below,
+      blockShortAbove: ai?.blockShortAbove ?? ai?.block_short_above,
+      crisisBlockAll: ai?.crisisBlockAll ?? ai?.crisis_block_all,
+      crisisLow: ai?.crisisLow ?? ai?.crisis_low,
+      crisisHigh: ai?.crisisHigh ?? ai?.crisis_high
+    };
+    const policy = { ...normalizeSentimentPolicy(raw, fallback), source: "ai" };
+    sentimentPolicyCache.ts = now;
+    sentimentPolicyCache.policy = policy;
+    return policy;
+  } catch {
+    const policy = { ...normalizeSentimentPolicy(fallback, fallback), source: "env_ai_error" };
+    sentimentPolicyCache.ts = now;
+    sentimentPolicyCache.policy = policy;
+    return policy;
+  }
+}
+
+function riskGateKeyFromSignal(signal) {
+  const s = signal && typeof signal === "object" ? signal : {};
+  const ex = String(s.exchange ?? "");
+  const sym = String(s.symbol ?? "");
+  const tf = String(s.timeframe ?? "");
+  const side = String(s.side ?? "");
+  const entry = Number(s.entry);
+  const e = Number.isFinite(entry) ? Math.round(entry * 1e6) / 1e6 : "na";
+  return `${ex}|${sym}|${tf}|${side}|${e}`;
+}
+
+function shortJson(v, maxChars = 900) {
+  try {
+    const txt = JSON.stringify(v);
+    if (!txt) return "";
+    return txt.length > maxChars ? txt.slice(0, maxChars) : txt;
+  } catch {
+    const s = String(v ?? "");
+    return s.length > maxChars ? s.slice(0, maxChars) : s;
+  }
+}
+
+function isEnabledFlag(raw, def = true) {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (!s) return def;
+  return !["0", "false", "off", "no"].includes(s);
+}
+
+async function resolveRiskGateDecision({ chatId, signal, candles, headlines, sentiment, sentimentPolicy, trapScore } = {}) {
+  const enabled = !["0", "false", "off", "no"].includes(String(process.env.RISK_GATE_ENABLED ?? "1").trim().toLowerCase());
+  if (!enabled) return { enabled: false, allow: true, reasons: [], source: "off" };
+
+  const orchestratorEnabled = isEnabledFlag(process.env.AI_ORCHESTRATOR_ENABLED ?? "1", true);
+  const ttlSeconds = Number.isFinite(Number(process.env.RISK_GATE_CACHE_SECONDS))
+    ? Math.max(0, Math.floor(Number(process.env.RISK_GATE_CACHE_SECONDS)))
+    : 120;
+  const ttlOverride = Number.isFinite(Number(process.env.AI_ORCHESTRATOR_CACHE_SECONDS))
+    ? Math.max(0, Math.floor(Number(process.env.AI_ORCHESTRATOR_CACHE_SECONDS)))
+    : null;
+  const ttl = orchestratorEnabled && ttlOverride !== null ? Math.min(ttlSeconds, ttlOverride) : ttlSeconds;
+  const now = nowMs();
+  const keyBase = riskGateKeyFromSignal(signal);
+  const key = orchestratorEnabled && Number.isFinite(Number(chatId)) ? `${keyBase}|chatId=${Number(chatId)}` : keyBase;
+  const cached = riskGateCache.get(key);
+  if (ttl > 0 && cached && now - cached.ts < ttl * 1000) {
+    try {
+      await incrementAiStats({ avoided: 1 });
+    } catch {
+    }
+    return { ...cached.decision, source: "cache" };
+  }
+
+  const movePctTh = Number.isFinite(Number(process.env.AI_REEVAL_PRICE_MOVE_PCT))
+    ? Math.max(0.05, Math.min(5, Number(process.env.AI_REEVAL_PRICE_MOVE_PCT)))
+    : 0.5;
+  const exKey = String(signal?.exchange ?? "");
+  const symKey = String(signal?.symbol ?? "");
+  const tfKey = String(signal?.timeframe ?? "");
+  const sideKey = String(signal?.side ?? "");
+  const entryKey = Number(signal?.entry);
+  const staticKey =
+    orchestratorEnabled && Number.isFinite(Number(chatId))
+      ? `orchestrator_static|${exKey}|${symKey}|${tfKey}|${sideKey}|chatId=${Number(chatId)}`
+      : `orchestrator_static|${exKey}|${symKey}|${tfKey}|${sideKey}`;
+  if (orchestratorEnabled && ttl > 0) {
+    const prev = riskGateCache.get(staticKey);
+    const prevEntry = Number(prev?.entry ?? prev?.decision?.entry);
+    const prevOk = prev && now - Number(prev.ts ?? 0) < ttl * 1000;
+    if (prevOk && Number.isFinite(prevEntry) && prevEntry > 0 && Number.isFinite(entryKey) && entryKey > 0) {
+      const moved = (Math.abs(entryKey - prevEntry) / prevEntry) * 100;
+      if (Number.isFinite(moved) && moved < movePctTh) {
+        try {
+          await incrementAiStats({ avoided: 1 });
+        } catch {
+        }
+        return { ...prev.decision, source: "frugal_cache" };
+      }
+    }
+  }
+
+  const apiKey = process.env.DEEPSEEK_KEY || process.env.DEEPSEEK_API_KEY || null;
+  if (!apiKey) {
+    const decision = { enabled: true, allow: true, reasons: [], source: "no_key" };
+    riskGateCache.set(key, { ts: now, decision });
+    return decision;
+  }
+
+  const s = signal && typeof signal === "object" ? signal : {};
+  const entry = Number(s.entry);
+  const sl = Number(s.sl);
+  const tpFinal = Number.isFinite(Number(s.tp2)) ? Number(s.tp2) : Number(s.tp);
+  const riskPct = Number.isFinite(entry) && entry > 0 && Number.isFinite(sl) ? (Math.abs(entry - sl) / entry) * 100 : null;
+  const rr =
+    Number.isFinite(entry) && Number.isFinite(sl) && Number.isFinite(tpFinal) && Math.abs(entry - sl) > 0
+      ? Math.abs(tpFinal - entry) / Math.abs(entry - sl)
+      : null;
+
+  const wisdom = await readWisdomEntries({ last: 12 });
+  const wisdomTxt = formatWisdomContext(wisdom.entries, 700);
+  const symUpper = normalizeForSearch(s.symbol ?? "");
+  const tfUpper = normalizeForSearch(s.timeframe ?? "");
+  const relevantWisdom = (Array.isArray(wisdom.entries) ? wisdom.entries : [])
+    .filter((e) => {
+      const one = normalizeForSearch(e);
+      if (!symUpper) return false;
+      const mentions = one.includes(`SYMBOL=${symUpper}`) || one.includes(` ${symUpper} `) || one.endsWith(symUpper) || one.startsWith(symUpper);
+      if (!mentions) return false;
+      if (!tfUpper) return true;
+      return one.includes(`TIMEFRAME=${tfUpper}`) || one.includes(` ${tfUpper} `) || one.includes(tfUpper);
+    })
+    .slice(-4)
+    .map((e) => String(e).replace(/\s+/g, " ").trim().slice(0, 260))
+    .filter(Boolean);
+  const errMem = await loadErrorMemory();
+  const recent = Array.isArray(errMem?.patterns) ? errMem.patterns.slice(-80) : [];
+  const sym = String(s.symbol ?? "");
+  const tf = String(s.timeframe ?? "");
+  const side = String(s.side ?? "");
+  const relevantErrors = recent
+    .filter((p) => String(p?.symbol ?? "") === sym && String(p?.timeframe ?? "") === tf && String(p?.side ?? "") === side)
+    .slice(-5)
+    .map((p) => p.patternText ?? "")
+    .filter(Boolean);
+
+  const wantDeriv = ["1", "true", "on", "yes"].includes(String(process.env.RISK_GATE_DERIVATIVES ?? "0").trim().toLowerCase());
+  const deriv = wantDeriv ? await fetchDerivativesContext({ exchange: s.exchange, symbol: s.symbol }) : null;
+
+  const titles = Array.isArray(headlines) ? headlines.slice(0, 12) : [];
+  const sent = sentiment && typeof sentiment === "object" ? sentiment : {};
+  const pol = sentimentPolicy && typeof sentimentPolicy === "object" ? sentimentPolicy : {};
+  if (orchestratorEnabled) {
+    const maxSteps = Number.isFinite(Number(process.env.AI_ORCHESTRATOR_MAX_STEPS))
+      ? Math.max(1, Math.min(5, Math.floor(Number(process.env.AI_ORCHESTRATOR_MAX_STEPS))))
+      : 3;
+    const toolResults = [];
+    const usedTools = [];
+    const toolbox = [
+      {
+        name: "getWhalePressure",
+        cost: "medio",
+        when: "Antes de confirmar entrada; aborta si hay muro real o spoofing.",
+        args: { exchange: s.exchange, symbol: s.symbol }
+      },
+      {
+        name: "detectVolumeAnomaly",
+        cost: "bajo",
+        when: "Confirmar z-score/absorción o low conviction.",
+        args: {
+          exchange: s.exchange,
+          symbol: s.symbol,
+          timeframe: s.timeframe,
+          lookback: Number.isFinite(Number(process.env.VOLUME_LOOKBACK)) ? Number(process.env.VOLUME_LOOKBACK) : 24
+        }
+      },
+      {
+        name: "computeBtcCorrelationBeta",
+        cost: "bajo",
+        when: "Riesgo sistémico; sizing si corr/beta altos.",
+        args: {
+          exchange: s.exchange,
+          symbol: s.symbol,
+          timeframe: s.timeframe,
+          window: Number.isFinite(Number(process.env.BTC_CORR_WINDOW)) ? Number(process.env.BTC_CORR_WINDOW) : 50
+        }
+      },
+      {
+        name: "getSectorExposurePct",
+        cost: "gratis",
+        when: "Control de exposición por sector (si hay chatId).",
+        args: { chatId: Number.isFinite(Number(chatId)) ? Number(chatId) : null }
+      },
+      {
+        name: "fetchBtcMarketWeakness",
+        cost: "bajo",
+        when: "Detectar debilidad BTC (RSI1h + sell wall).",
+        args: { exchange: s.exchange }
+      }
+    ];
+
+    const baseContext = [
+      "ROL: Eres un orquestador de trading con Tool-Calling. Debes gastar lo mínimo.",
+      "PROTOCOLO:",
+      "- Si puedes decidir sin herramientas, decide FINAL.",
+      "- Si necesitas confirmación, pide UNA herramienta a la vez.",
+      "- Si detectas peligro (spoofing, sell wall fuerte, BTC débil + beta alta), CANCELAR.",
+      "- Devuelve SOLO JSON.",
+      "",
+      `CHAT_ID: ${Number.isFinite(Number(chatId)) ? Number(chatId) : "N/A"}`,
+      `EXCHANGE: ${s.exchange}`,
+      `SIMBOLO: ${s.symbol}`,
+      `SECTOR: ${detectarSectorDeMoneda(s.symbol)}`,
+      `CICLO: ${shortJson(getCryptoCycleContext(new Date()), 240)}`,
+      `TIMEFRAME: ${s.timeframe}`,
+      `SIDE: ${s.side}`,
+      `ENTRY: ${s.entry}`,
+      `SL: ${s.sl}`,
+      `TP: ${tpFinal}`,
+      Number.isFinite(riskPct) ? `RISK_PCT: ${formatNumber(riskPct, 2)}` : "RISK_PCT: N/A",
+      Number.isFinite(rr) ? `RR: ${formatNumber(rr, 2)}` : "RR: N/A",
+      `CONFIDENCE_BASE: ${Number.isFinite(Number(s?.model?.confidence)) ? formatNumber(Number(s.model.confidence), 3) : "N/A"}`,
+      `TRAP_SCORE: ${Number.isFinite(Number(trapScore)) ? formatNumber(Number(trapScore), 2) : "N/A"}`,
+      `SENTIMENT: ${Number.isFinite(Number(sent.score)) ? `${Math.round(Number(sent.score))}/100` : "N/A"} ${String(sent.label ?? "")}`,
+      titles.length ? `TITULARES: ${titles.join(" | ")}` : "",
+      wisdomTxt ? `LECCIONES_RECIENTES: ${wisdomTxt}` : "",
+      relevantWisdom.length ? `LECCIONES_SIMILARES: ${relevantWisdom.join(" || ")}` : "",
+      relevantErrors.length ? `ERRORES_RELEVANTES: ${relevantErrors.join(" || ")}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const toolByName = {
+      getWhalePressure: async (args) => await getWhalePressure(args),
+      detectVolumeAnomaly: async (args) => await detectVolumeAnomaly(args),
+      computeBtcCorrelationBeta: async (args) => await computeBtcCorrelationBeta(args),
+      getSectorExposurePct: async (args) => await getSectorExposurePct(args),
+      fetchBtcMarketWeakness: async (args) => await fetchBtcMarketWeakness(args)
+    };
+
+    for (let step = 0; step < maxSteps; step += 1) {
+      const prompt = [
+        baseContext,
+        "",
+        `TOOLBOX: ${shortJson(toolbox, 1500)}`,
+        toolResults.length ? `TOOL_RESULTS: ${shortJson(toolResults, 1500)}` : "",
+        "",
+        "Devuelve JSON con ESTRICTO esquema:",
+        "- action: CALL_TOOL | FINAL",
+        "- si CALL_TOOL: tool (string), args (object), reason (string corto)",
+        "- si FINAL: allow (bool), verdict (ENTRAR|ESPERAR|CANCELAR), reasons (array max 4), confidence (0-100), entryType (aggressive|normal), sizingFactor (0.1-1.0), toolsUsed (array)",
+        "",
+        `STEPS_LEFT: ${maxSteps - step}`
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      let ai;
+      try {
+        ai = await consultDeepseek({ apiKey, promptText: prompt, temperature: 0.1 });
+      } catch {
+        ai = null;
+      }
+      const action = String(ai?.action ?? "").trim().toUpperCase();
+      if (action === "CALL_TOOL") {
+        const tool = String(ai?.tool ?? "").trim();
+        if (!tool || !(tool in toolByName)) {
+          const decision = {
+            enabled: true,
+            allow: false,
+            reasons: ["Orquestador: herramienta inválida."],
+            source: "orchestrator",
+            verdict: "CANCELAR",
+            confidence: 0,
+            entryType: "normal",
+            sizingFactor: 0.5,
+            toolsUsed
+          };
+          riskGateCache.set(key, { ts: now, decision });
+          riskGateCache.set(staticKey, { ts: now, entry: entryKey, decision });
+          return decision;
+        }
+        const args = ai?.args && typeof ai.args === "object" ? ai.args : {};
+        let out = null;
+        try {
+          out = await toolByName[tool](args);
+        } catch (e) {
+          out = { ok: false, error: e?.message ?? String(e) };
+        }
+        usedTools.push(tool);
+        toolResults.push({ tool, args, out });
+        continue;
+      }
+
+      if (action === "FINAL") {
+        const allow = typeof ai?.allow === "boolean" ? ai.allow : String(ai?.verdict ?? "").toUpperCase() === "ENTRAR";
+        const reasons = Array.isArray(ai?.reasons) ? ai.reasons.map((x) => String(x ?? "").trim()).filter(Boolean).slice(0, 4) : [];
+        const verdict = String(ai?.verdict ?? "").trim().toUpperCase() || (allow ? "ENTRAR" : "ESPERAR");
+        const confidence = Number.isFinite(Number(ai?.confidence)) ? Math.max(0, Math.min(100, Math.floor(Number(ai.confidence)))) : null;
+        const entryType = String(ai?.entryType ?? ai?.entry_type ?? "normal").trim().toLowerCase() === "aggressive" ? "aggressive" : "normal";
+        const sizingFactor = Number.isFinite(Number(ai?.sizingFactor))
+          ? Math.max(0.1, Math.min(1, Number(ai.sizingFactor)))
+          : 1;
+        const decision = {
+          enabled: true,
+          allow,
+          reasons,
+          source: "orchestrator",
+          verdict,
+          confidence,
+          entryType,
+          sizingFactor,
+          toolsUsed: Array.isArray(ai?.toolsUsed) ? ai.toolsUsed : usedTools,
+          toolResults
+        };
+        riskGateCache.set(key, { ts: now, decision });
+        riskGateCache.set(staticKey, { ts: now, entry: entryKey, decision });
+        return decision;
+      }
+      break;
+    }
+    const decision = { enabled: true, allow: true, reasons: [], source: "orchestrator_fallback_allow" };
+    riskGateCache.set(key, { ts: now, decision });
+    riskGateCache.set(staticKey, { ts: now, entry: entryKey, decision });
+    return decision;
+  }
+
+  let whale = null;
+  let volAnom = null;
+  const whaleEnabled = !["0", "false", "off", "no"].includes(
+    String(process.env.WHALE_TRACKER_ENABLED ?? "1").trim().toLowerCase()
+  );
+  const volEnabled = !["0", "false", "off", "no"].includes(
+    String(process.env.VOLUME_ANOMALY_ENABLED ?? "1").trim().toLowerCase()
+  );
+  if (whaleEnabled) {
+    try {
+      whale = await getWhalePressure({ exchange: s.exchange, symbol: s.symbol });
+    } catch {
+      whale = null;
+    }
+  }
+  if (volEnabled) {
+    try {
+      const zHigh = Number.isFinite(Number(process.env.VOLUME_Z_HIGH)) ? Number(process.env.VOLUME_Z_HIGH) : 2.5;
+      const wickRatioMin = Number.isFinite(Number(process.env.ABSORPTION_WICK_RATIO)) ? Number(process.env.ABSORPTION_WICK_RATIO) : 0.7;
+      const bodyMax = Number.isFinite(Number(process.env.ABSORPTION_BODY_MAX)) ? Number(process.env.ABSORPTION_BODY_MAX) : 0.3;
+      const lowMovePct = Number.isFinite(Number(process.env.ABSORPTION_LOW_MOVE_PCT)) ? Number(process.env.ABSORPTION_LOW_MOVE_PCT) : 0.2;
+      const strongMovePct = Number.isFinite(Number(process.env.LOWVOL_STRONG_MOVE_PCT)) ? Number(process.env.LOWVOL_STRONG_MOVE_PCT) : 0.8;
+      volAnom = detectVolumeAnomalyFromCandles({
+        candles,
+        lookback: Number.isFinite(Number(process.env.VOLUME_LOOKBACK)) ? Number(process.env.VOLUME_LOOKBACK) : 24,
+        zHigh,
+        wickRatioMin,
+        bodyMax,
+        lowMovePct,
+        strongMovePct
+      });
+    } catch {
+      volAnom = null;
+    }
+  }
+
+  const prompt = [
+    "ROL: Eres un Chief Risk Officer de trading crypto. Sé duro y realista.",
+    "OBJETIVO: Decide si ENTRAR o ESPERAR. Si hay cualquier señal de locura, di NO.",
+    "REGLAS:",
+    "- Devuelve SOLO JSON.",
+    "- Si no hay edge claro, verdict=ESPERAR y allow=false.",
+    "- Penaliza fuerte: RR bajo, SL lejano, noticias negativas, whale trap, señales similares a errores recientes.",
+    "- Si verdict=ESPERAR, debes entregar un plan accionable para convertirlo en ENTRAR.",
+    "- nextStepCondition.type permitido: volume_above_sma | rsi_threshold | price_retest | manual.",
+    "",
+    `EXCHANGE: ${s.exchange}`,
+    `SIMBOLO: ${s.symbol}`,
+    `SECTOR: ${detectarSectorDeMoneda(s.symbol)}`,
+    `CICLO: ${JSON.stringify(getCryptoCycleContext(new Date()))}`,
+    `TIMEFRAME: ${s.timeframe}`,
+    `SIDE: ${s.side}`,
+    `ENTRY: ${s.entry}`,
+    `SL: ${s.sl}`,
+    `TP: ${tpFinal}`,
+    Number.isFinite(riskPct) ? `RISK_PCT: ${formatNumber(riskPct, 2)}` : "RISK_PCT: N/A",
+    Number.isFinite(rr) ? `RR: ${formatNumber(rr, 2)}` : "RR: N/A",
+    `CONFIDENCE: ${Number.isFinite(Number(s?.model?.confidence)) ? formatNumber(Number(s.model.confidence), 3) : "N/A"}`,
+    `TRAP_SCORE: ${Number.isFinite(Number(trapScore)) ? formatNumber(Number(trapScore), 2) : "N/A"}`,
+    `SENTIMENT: ${Number.isFinite(Number(sent.score)) ? `${Math.round(Number(sent.score))}/100` : "N/A"} ${String(sent.label ?? "")}`,
+    `SENTIMENT_POLICY: ${JSON.stringify(pol)}`,
+    deriv ? `DERIV: ${JSON.stringify(deriv)}` : "",
+    titles.length ? `TITULARES: ${titles.join(" | ")}` : "",
+    whale?.ok
+      ? `WHALE_PRESSURE: ${JSON.stringify({
+          buyPressure: whale.buyPressure,
+          sellPressure: whale.sellPressure,
+          buyWall: whale.buyWall,
+          sellWall: whale.sellWall,
+          buyWallRatio: whale.buyWallRatio,
+          sellWallRatio: whale.sellWallRatio,
+          spoofing: whale.spoofing
+        })}`
+      : "",
+    volAnom?.ok
+      ? `VOLUME_ANOMALY: ${JSON.stringify({
+          zScore: volAnom.zScore,
+          capitalInjection: volAnom.capitalInjection,
+          absorption: volAnom.absorption,
+          lowConviction: volAnom.lowConviction,
+          wickRatio: volAnom.wickRatio,
+          movePct: volAnom.movePct
+        })}`
+      : "",
+    wisdomTxt ? `LECCIONES_RECIENTES: ${wisdomTxt}` : "",
+    relevantWisdom.length ? `LECCIONES_SIMILARES: ${relevantWisdom.join(" || ")}` : "",
+    relevantErrors.length ? `ERRORES_RELEVANTES: ${relevantErrors.join(" || ")}` : "",
+    "",
+    "Devuelve JSON con:",
+    "- allow (boolean)",
+    "- verdict (ENTRAR/ESPERAR)",
+    "- reasons (array de strings, max 4)",
+    "- nextStepCondition (obj) con: type, timeframe, params, text",
+    "- targetEntryAdjustment (obj opcional) con: mode (market/limit), price, text",
+    "- retry (obj) con: maxCandles (1-20)",
+    "- confidence (0-100)"
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  try {
+    const ai = await consultDeepseek({ apiKey, promptText: prompt, temperature: 0.15 });
+    const allow =
+      typeof ai?.allow === "boolean" ? ai.allow : String(ai?.verdict ?? "").toUpperCase() === "ENTRAR";
+    const reasons = Array.isArray(ai?.reasons) ? ai.reasons.map((x) => String(x ?? "").trim()).filter(Boolean).slice(0, 4) : [];
+    const ns =
+      (ai?.nextStepCondition && typeof ai.nextStepCondition === "object" ? ai.nextStepCondition : null) ??
+      (ai?.next_step_condition && typeof ai.next_step_condition === "object" ? ai.next_step_condition : null) ??
+      null;
+    const ta =
+      (ai?.targetEntryAdjustment && typeof ai.targetEntryAdjustment === "object" ? ai.targetEntryAdjustment : null) ??
+      (ai?.target_entry_adjustment && typeof ai.target_entry_adjustment === "object" ? ai.target_entry_adjustment : null) ??
+      null;
+    const retry =
+      (ai?.retry && typeof ai.retry === "object" ? ai.retry : null) ??
+      (ai?.reintento && typeof ai.reintento === "object" ? ai.reintento : null) ??
+      null;
+    const decision = {
+      enabled: true,
+      allow,
+      reasons,
+      source: "ai",
+      verdict: String(ai?.verdict ?? "").trim().toUpperCase() || (allow ? "ENTRAR" : "ESPERAR"),
+      nextStepCondition: ns,
+      targetEntryAdjustment: ta,
+      retry
+    };
+    riskGateCache.set(key, { ts: now, decision });
+    return decision;
+  } catch {
+    const decision = { enabled: true, allow: true, reasons: [], source: "ai_error_allow" };
+    riskGateCache.set(key, { ts: now, decision });
+    return decision;
+  }
+}
+
+export async function fetchCryptoNewsHeadlines({ maxTitles = 10 } = {}) {
+  const ttlSeconds = Number.isFinite(Number(process.env.NEWS_CACHE_SECONDS))
+    ? Math.max(0, Math.floor(Number(process.env.NEWS_CACHE_SECONDS)))
+    : 300;
+  const now = nowMs();
+  if (ttlSeconds > 0 && newsCache.ts && now - newsCache.ts < ttlSeconds * 1000 && newsCache.headlines.length) {
+    return newsCache.headlines.slice(0, Math.max(1, Number(maxTitles) || 10));
+  }
+
+  const urls = parseEnvList(process.env.NEWS_RSS_URLS);
+  const baseUrls = urls.length
+    ? urls
+    : [
+        "https://www.coindesk.com/arc/outboundfeeds/rss/",
+        "https://cointelegraph.com/rss",
+        "https://news.google.com/rss/search?q=cryptocurrency&hl=en-US&gl=US&ceid=US:en"
+      ];
+
+  const perFeed = Math.max(2, Math.ceil(Number(maxTitles) / baseUrls.length));
   const all = [];
-  for (const u of urls) {
+  for (const u of baseUrls) {
     try {
       const t = await fetchRss(u, perFeed);
       all.push(...t);
@@ -2604,7 +4801,20 @@ export async function fetchCryptoNewsHeadlines({ maxTitles = 10 } = {}) {
     if (!uniq.includes(t)) uniq.push(t);
     if (uniq.length >= maxTitles) break;
   }
+  newsCache.ts = now;
+  newsCache.headlines = uniq.slice();
   return uniq;
+}
+
+export async function fetchNewsSnapshot({ maxTitles = 10 } = {}) {
+  const headlines = await fetchCryptoNewsHeadlines({ maxTitles });
+  const sent = sentimentScoreFromHeadlines(headlines);
+  const policy = await resolveSentimentPolicy({ headlines, sentimentScore: sent.score, sentimentLabel: sent.label });
+  return {
+    ts: new Date().toISOString(),
+    headlines,
+    sentiment: { score: sent.score, label: sent.label, policy }
+  };
 }
 
 async function fetchDerivativesContext({ exchange, symbol }) {
@@ -2708,8 +4918,20 @@ export async function buildAiTradeIdea({ exchange, symbol, timeframe, candles, a
     headlines = await fetchCryptoNewsHeadlines({ maxTitles: 8 });
   } catch {
   }
+  const newsSent = sentimentScoreFromHeadlines(headlines);
+  const newsPolicy = await resolveSentimentPolicy({
+    headlines,
+    sentimentScore: newsSent.score,
+    sentimentLabel: newsSent.label
+  });
+  const aiName = String(process.env.AI_NAME ?? process.env.AETHER_NAME ?? "AETHER").trim() || "AETHER";
+  const persona = String(
+    process.env.AI_PERSONA ??
+      `${aiName} es un agente de trading institucional, crítico y directo. Si la idea es mala o riesgosa, debe decir NO y recomendar ESPERAR.`
+  ).trim();
 
   const prompt = [
+    `ROL: ${persona}`,
     `SIMBOLO: ${signal.symbol}`,
     `EXCHANGE: ${signal.exchange}`,
     `TIMEFRAME: ${signal.timeframe}`,
@@ -2723,12 +4945,14 @@ export async function buildAiTradeIdea({ exchange, symbol, timeframe, candles, a
     deriv?.fundingRate !== undefined ? `FUNDING_RATE: ${deriv.fundingRate}` : "",
     deriv?.openInterest !== undefined ? `OPEN_INTEREST: ${deriv.openInterest}` : "",
     smart?.enabled && smart?.items?.length ? `SMART_MONEY (${smart.sources.join(", ")}): ${smart.items.join(" | ")}` : "",
+    `SENTIMIENTO_NOTICIAS: ${newsSent.score}/100 (${newsSent.label})`,
+    `SENTIMIENTO_POLITICA: ${JSON.stringify(newsPolicy)}`,
     headlines.length ? `NOTICIAS: ${headlines.join(" | ")}` : "",
     wisdomText ? `LECCIONES_RECIENTES: ${wisdomText}` : "",
     lossText ? `ERRORES_RECIENTES: ${lossText}` : "",
     engramRecall ? `ENGRAM_RECALL: ${engramRecall}` : "",
     "",
-    "Instrucción: Genera una señal de trading pero evita patrones similares a ERRORES_RECIENTES y aplica LECCIONES_RECIENTES. Si no hay edge claro, usa accion=ESPERAR.",
+    "Instrucción: Genera una señal de trading como un jefe de riesgo. Evita patrones similares a ERRORES_RECIENTES y aplica LECCIONES_RECIENTES. Si no hay edge claro o el RR es pobre, usa accion=ESPERAR.",
     "Devuelve un JSON con: accion (COMPRA/VENTA/ESPERAR), moneda, precio_entrada, tp, sl, porcentaje_confianza (0-100), notas."
   ]
     .filter(Boolean)
@@ -2752,7 +4976,12 @@ export async function buildAiTradeIdea({ exchange, symbol, timeframe, candles, a
     ...merged,
     exchange: signal.exchange,
     symbol: signal.symbol,
-    timeframe: signal.timeframe
+    timeframe: signal.timeframe,
+    context: {
+      headlines,
+      wisdom: wisdomText,
+      recentLosses: lossText
+    }
   };
 }
 
