@@ -23,11 +23,10 @@ async function readJson(request, limitBytes = 1_000_000) {
 
 function buildUpstreamUrl(env, path, queryString) {
   let base = envGet(env, "BOT_API_BASE_URL").replace(/\/+$/, "");
-  if (!base) return "";
   
-  // Ensure port 8787 is present if it's the 161.35.107.114 IP
-  if (base.includes("161.35.107.114") && !base.includes(":")) {
-    base = "http://161.35.107.114:8787";
+  // Auto-correction: Use the Cloudflare Tunnel hostname if available or raw IP is used
+  if (!base || base.includes("161.35.107.114")) {
+    base = "https://api.aetherconnectlabs.software";
   }
 
   const qs = queryString ? (queryString.startsWith("?") ? queryString : `?${queryString}`) : "";
