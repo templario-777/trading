@@ -1,1248 +1,1066 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" class="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Aether Connect</title>
+    <title>Aether Connect | Pro Trading Bot</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- TradingView Lightweight Charts -->
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              bg: "#0b1220",
+              panel: "#0f1b33",
+              accent: "#5fa8ff",
+              danger: "#ff6b6b",
+              ok: "#5cffb0",
+              warn: "#ffd166",
+              border: "rgba(255, 255, 255, 0.08)",
+            },
+          },
+        },
+      }
+    </script>
     <style>
-      :root {
-        color-scheme: dark;
-        --bg: #0b1220;
-        --panel: #0f1b33;
-        --panel2: rgba(15, 27, 51, 0.72);
-        --text: #e9eefc;
-        --muted: #9db0d9;
-        --accent: #5fa8ff;
-        --danger: #ff6b6b;
-        --ok: #5cffb0;
-        --warn: #ffd166;
-        --border: rgba(255, 255, 255, 0.08);
-      }
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
       body {
-        margin: 0;
-        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-        background: radial-gradient(1200px 600px at 20% 0%, rgba(95, 168, 255, 0.15), transparent),
-          radial-gradient(900px 500px at 90% 20%, rgba(92, 255, 176, 0.12), transparent), var(--bg);
-        color: var(--text);
+        font-family: 'Inter', sans-serif;
+        background-color: #0b1220;
+        color: #e9eefc;
       }
-      header {
-        padding: 24px 16px 12px;
-        max-width: 980px;
-        margin: 0 auto;
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
       }
-      h1 {
-        margin: 0;
-        font-size: 18px;
-        font-weight: 650;
-        letter-spacing: 0.2px;
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
       }
-      .sub {
-        margin-top: 6px;
-        color: var(--muted);
-        font-size: 13px;
-      }
-      main {
-        max-width: 980px;
-        margin: 0 auto;
-        padding: 12px 16px 28px;
-        display: grid;
-        grid-template-columns: 360px 1fr;
-        gap: 12px;
-      }
-      @media (max-width: 900px) {
-        main {
-          grid-template-columns: 1fr;
-        }
-      }
-      .card {
-        background: rgba(15, 27, 51, 0.85);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 14px;
-        backdrop-filter: blur(6px);
-      }
-      .stack {
-        display: grid;
-        gap: 12px;
-      }
-      .row {
-        display: grid;
-        gap: 10px;
-      }
-      label {
-        display: grid;
-        gap: 6px;
-        font-size: 12px;
-        color: var(--muted);
-      }
-      input,
-      select,
-      button {
-        font: inherit;
-      }
-      input,
-      select {
-        background: rgba(255, 255, 255, 0.06);
-        color: var(--text);
-        border: 1px solid var(--border);
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.1);
         border-radius: 10px;
-        padding: 10px 10px;
-        outline: none;
       }
-      input:focus,
-      select:focus {
-        border-color: rgba(95, 168, 255, 0.5);
+      .tab-content {
+        display: none;
       }
-      .btns {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 10px;
+      .tab-content.active {
+        display: block;
       }
-      button {
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 10px 10px;
-        background: rgba(255, 255, 255, 0.06);
-        color: var(--text);
-        cursor: pointer;
-      }
-      button.primary {
-        border-color: rgba(95, 168, 255, 0.6);
-        background: rgba(95, 168, 255, 0.18);
-      }
-      button:disabled {
-        opacity: 0.55;
-        cursor: not-allowed;
-      }
-      .status {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        font-size: 12px;
-        color: var(--muted);
-        margin-top: 10px;
-      }
-      .badges {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-      .badge {
-        font-size: 12px;
-        padding: 6px 10px;
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.04);
-        color: var(--muted);
-      }
-      .badge.ok {
-        border-color: rgba(92, 255, 176, 0.6);
-        background: rgba(92, 255, 176, 0.10);
-        color: #b6ffe0;
-      }
-      .badge.bad {
-        border-color: rgba(255, 107, 107, 0.6);
-        background: rgba(255, 107, 107, 0.10);
-        color: #ffd1d1;
-      }
-      .badge.warn {
-        border-color: rgba(255, 209, 102, 0.7);
-        background: rgba(255, 209, 102, 0.10);
-        color: #ffe9b8;
-      }
-      pre {
-        margin: 0;
-        white-space: pre-wrap;
-        word-break: break-word;
-        font-size: 12px;
-        line-height: 1.5;
-        color: #d9e4ff;
-      }
-      .muted {
-        color: var(--muted);
-      }
-      .title {
-        font-size: 13px;
-        font-weight: 650;
-        margin: 0 0 10px;
-      }
-      .tabs {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-bottom: 10px;
-      }
-      .tab {
-        font-size: 12px;
-        padding: 8px 10px;
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.05);
-        cursor: pointer;
-      }
-      .tab.active {
-        border-color: rgba(95, 168, 255, 0.7);
-        background: rgba(95, 168, 255, 0.18);
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 12px;
-      }
-      th,
-      td {
-        padding: 10px 8px;
-        border-bottom: 1px solid var(--border);
-        text-align: left;
-      }
-      th {
-        color: var(--muted);
-        font-weight: 600;
-      }
-      .kpis {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-bottom: 10px;
-      }
-      @media (max-width: 520px) {
-        .kpis {
-          grid-template-columns: 1fr;
-        }
-      }
-      .kpi {
-        background: var(--panel2);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 12px;
-      }
-      .kpiLabel {
-        color: var(--muted);
-        font-size: 11px;
-        letter-spacing: 0.2px;
-      }
-      .kpiVal {
-        font-size: 18px;
-        font-weight: 700;
-        margin-top: 6px;
-      }
-      .kpiSub {
-        color: var(--muted);
-        font-size: 12px;
-        margin-top: 6px;
-        line-height: 1.4;
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-      .meter {
-        margin-top: 10px;
-        height: 10px;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        overflow: hidden;
-      }
-      .meter > div {
-        height: 100%;
-        width: 0%;
-        background: rgba(95, 168, 255, 0.8);
-      }
-      .kv {
-        display: grid;
-        grid-template-columns: 160px 1fr;
-        gap: 8px 12px;
-        font-size: 12px;
-        align-items: baseline;
-      }
-      .kv .k {
-        color: var(--muted);
-      }
-      .pill {
-        display: inline-flex;
-        gap: 8px;
-        align-items: center;
-        padding: 6px 10px;
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.04);
-        font-size: 12px;
-        color: var(--muted);
-      }
-      .dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.22);
-      }
-      .dot.ok {
-        background: rgba(92, 255, 176, 0.85);
-      }
-      .dot.bad {
-        background: rgba(255, 107, 107, 0.85);
-      }
-      .dot.warn {
-        background: rgba(255, 209, 102, 0.9);
-      }
-      details {
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        background: var(--panel2);
-        padding: 10px 12px;
-      }
-      details > summary {
-        cursor: pointer;
-        font-size: 12px;
-        color: var(--text);
-        font-weight: 650;
-      }
-      details pre {
-        margin-top: 10px;
-        color: #d9e4ff;
+      .glass {
+        background: rgba(15, 27, 51, 0.72);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
       }
     </style>
   </head>
-  <body>
-    <header>
-      <h1>Aether Connect</h1>
-      <div class="sub">Panel privado de trading (señales, IA, noticias y paper)</div>
-    </header>
-    <main>
-      <section class="card">
-        <div class="row">
-          <label>
-            Exchange
-            <input id="exchange" value="binanceus" />
-          </label>
-          <label>
-            Symbol
-            <input id="symbol" value="BTC/USDT" />
-          </label>
-          <label>
-            Timeframe
-            <select id="timeframe">
-              <option value="15m">15m</option>
-              <option value="1h">1h</option>
-              <option value="4h">4h</option>
-              <option value="1d">1d</option>
-              <option value="all">all</option>
-            </select>
-          </label>
-          <label>
-            API Key (Bearer)
-            <input id="apiKey" type="password" placeholder="TRADING_BOT_API_KEY" />
-          </label>
-          <div class="btns">
-            <button class="primary" id="btnSignal">Señal</button>
-            <button id="btnAi">IA</button>
-            <button id="btnNews">Noticias</button>
-            <button id="btnPositions">Posiciones</button>
+  <body class="min-h-screen flex flex-col md:flex-row overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="w-full md:w-64 glass border-r border-border flex flex-col z-20">
+      <div class="p-6 flex items-center gap-3">
+        <div class="w-10 h-10 bg-accent/20 rounded-xl flex items-center justify-center border border-accent/30">
+          <i data-lucide="zap" class="text-accent w-6 h-6"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight">Aether</h1>
+          <p class="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Trading Engine</p>
+        </div>
+      </div>
+
+      <nav class="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
+        <button data-tab="signals" class="tab-btn active w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
+          <i data-lucide="line-chart" class="w-4 h-4"></i>
+          <span>Señales & IA</span>
+        </button>
+        <button data-tab="paper" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
+          <i data-lucide="layers" class="w-4 h-4"></i>
+          <span>Paper Trading</span>
+        </button>
+        <button data-tab="futures" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
+          <i data-lucide="trending-up" class="w-4 h-4"></i>
+          <span>Futures Real</span>
+        </button>
+        <button data-tab="wisdom" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
+          <i data-lucide="brain-circuit" class="w-4 h-4"></i>
+          <span>Sabiduría & Reglas</span>
+        </button>
+        <button data-tab="engrams" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
+          <i data-lucide="database" class="w-4 h-4"></i>
+          <span>Engrams (Memoria)</span>
+        </button>
+        <button data-tab="stats" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
+          <i data-lucide="pie-chart" class="w-4 h-4"></i>
+          <span>Analítica & PnL</span>
+        </button>
+      </nav>
+
+      <div class="p-4 border-t border-border space-y-3">
+        <div class="flex items-center justify-between text-[11px] text-slate-400 uppercase tracking-wider px-2">
+          <span>Conectividad</span>
+          <div id="statusDot" class="w-2 h-2 rounded-full bg-danger animate-pulse"></div>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 text-xs">
+            <span class="text-slate-400">Health</span>
+            <span id="healthVal" class="font-medium text-danger">OFF</span>
           </div>
-          <div class="status">
-            <div class="badges">
-              <div class="badge" id="bHealth">Health: ...</div>
-              <div class="badge" id="bAi">IA: ...</div>
-              <div class="badge" id="bAuth">API: ...</div>
-              <div class="badge" id="bRules">Reglas: ...</div>
+          <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 text-xs">
+            <span class="text-slate-400">API Auth</span>
+            <span id="authVal" class="font-medium text-danger">ERROR</span>
+          </div>
+          <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 text-xs">
+            <span class="text-slate-400">Brain</span>
+            <span id="brainVal" class="font-medium text-accent italic">GLOBAL</span>
+          </div>
+          <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 text-[10px]">
+            <span class="text-slate-400 font-mono">161.35.107.114</span>
+            <span id="sshVal" class="text-ok">CONNECTED</span>
+          </div>
+          <div id="vpsStats" class="space-y-1 mt-2 hidden">
+            <div class="flex items-center justify-between p-1.5 rounded-md bg-white/5 text-[9px]">
+              <span class="text-slate-500">Service</span>
+              <span id="vpsService" class="text-ok font-bold">ACTIVE</span>
+            </div>
+            <div class="flex items-center justify-between p-1.5 rounded-md bg-white/5 text-[9px]">
+              <span class="text-slate-500">Uptime</span>
+              <span id="vpsUptime" class="text-slate-300">—</span>
             </div>
           </div>
         </div>
-      </section>
-      <section class="card">
-        <div class="tabs">
-          <div class="tab active" data-tab="out">Salida</div>
-          <div class="tab" data-tab="positions">Paper</div>
-          <div class="tab" data-tab="learn">Aprendizaje</div>
-          <div class="tab" data-tab="gains">Ganancias</div>
-          <div class="tab" data-tab="auto">Auto (Test)</div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+      <!-- Background Decorative Gradients -->
+      <div class="absolute top-0 left-0 w-full h-full pointer-events-none -z-10 opacity-30">
+        <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-accent/20 rounded-full blur-[120px]"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-ok/10 rounded-full blur-[120px]"></div>
+      </div>
+
+      <!-- Topbar -->
+      <header class="h-16 glass border-b border-border flex items-center justify-between px-6 shrink-0">
+        <div class="flex items-center gap-4">
+          <div class="flex flex-col">
+            <span id="currentTabTitle" class="text-sm font-semibold">Señales & IA</span>
+            <span class="text-[10px] text-slate-400">Panel de control en tiempo real</span>
+          </div>
         </div>
-        <div id="panelOut">
-          <div class="kpis">
-            <div class="kpi">
-              <div class="kpiLabel">Confianza</div>
-              <div class="kpiVal" id="kConfVal">—</div>
-              <div class="kpiSub" id="kConfSub">Sin datos todavía.</div>
-              <div class="meter"><div id="kConfBar"></div></div>
+
+        <div class="flex items-center gap-4">
+          <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 glass rounded-full text-xs">
+            <span class="text-slate-400">API Key:</span>
+            <input id="apiKey" type="password" placeholder="••••••••" class="bg-transparent border-none outline-none w-24 text-accent font-mono placeholder:text-slate-600" />
+          </div>
+          <button id="btnRefresh" class="p-2 glass rounded-xl hover:bg-white/10 transition-all text-slate-400 hover:text-white">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- Scrollable Area -->
+      <div class="flex-1 overflow-y-auto custom-scrollbar p-6">
+        
+        <!-- Tab: Signals & AI -->
+        <div id="tab-signals" class="tab-content active space-y-6">
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Configuration Card -->
+            <div class="lg:col-span-1 glass rounded-2xl p-6 space-y-4">
+              <h3 class="text-sm font-bold flex items-center gap-2">
+                <i data-lucide="settings-2" class="w-4 h-4 text-accent"></i>
+                Configuración de Escaneo
+              </h3>
+              <div class="space-y-3">
+                <div class="space-y-1.5">
+                  <label class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Exchange</label>
+                  <input id="exchange" value="binanceus" class="w-full bg-bg border border-border rounded-xl px-4 py-2.5 text-sm focus:border-accent/50 outline-none transition-all" />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Símbolo</label>
+                  <input id="symbol" value="BTC/USDT" class="w-full bg-bg border border-border rounded-xl px-4 py-2.5 text-sm focus:border-accent/50 outline-none transition-all" />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Timeframe</label>
+                  <select id="timeframe" class="w-full bg-bg border border-border rounded-xl px-4 py-2.5 text-sm focus:border-accent/50 outline-none transition-all appearance-none">
+                    <option value="15m">15 minutos</option>
+                    <option value="1h">1 hora</option>
+                    <option value="4h">4 horas</option>
+                    <option value="1d">1 día</option>
+                    <option value="all">Todos</option>
+                  </select>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3 pt-2">
+                <button id="btnSignal" class="flex items-center justify-center gap-2 bg-accent/20 hover:bg-accent/30 text-accent border border-accent/30 py-2.5 rounded-xl text-sm font-semibold transition-all">
+                  <i data-lucide="zap" class="w-4 h-4"></i> Señal
+                </button>
+                <button id="btnAi" class="flex items-center justify-center gap-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/30 py-2.5 rounded-xl text-sm font-semibold transition-all">
+                  <i data-lucide="sparkles" class="w-4 h-4"></i> IA
+                </button>
+              </div>
+              <button id="btnNews" class="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 text-white border border-border py-2.5 rounded-xl text-sm font-semibold transition-all">
+                <i data-lucide="newspaper" class="w-4 h-4"></i> Noticias de Mercado
+              </button>
             </div>
-            <div class="kpi">
-              <div class="kpiLabel">Guardia</div>
-              <div class="kpiVal" id="kGuardVal">—</div>
-              <div class="kpiSub" id="kGuardReasons"></div>
+
+            <!-- Analysis & KPIs -->
+            <div class="lg:col-span-2 space-y-6">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="glass rounded-2xl p-5 border-l-4 border-l-accent">
+                  <div class="flex items-center justify-between mb-3">
+                    <span class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Confianza de Señal</span>
+                    <i data-lucide="shield-check" class="w-4 h-4 text-accent"></i>
+                  </div>
+                  <div class="flex items-baseline gap-2">
+                    <span id="kConfVal" class="text-3xl font-bold">—</span>
+                    <span class="text-xs text-slate-400">score</span>
+                  </div>
+                  <div class="mt-4 h-2 bg-white/5 rounded-full overflow-hidden">
+                    <div id="kConfBar" class="h-full bg-accent transition-all duration-700" style="width: 0%"></div>
+                  </div>
+                </div>
+                <div class="glass rounded-2xl p-5 border-l-4 border-l-warn">
+                  <div class="flex items-center justify-between mb-3">
+                    <span class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Guardia de Entrada</span>
+                    <i data-lucide="shield-alert" class="w-4 h-4 text-warn"></i>
+                  </div>
+                  <div class="flex items-baseline gap-2">
+                    <span id="kGuardVal" class="text-2xl font-bold text-warn">IDLE</span>
+                  </div>
+                  <p id="kGuardReasons" class="mt-2 text-[10px] text-slate-400 line-clamp-2 italic">Sin análisis reciente.</p>
+                </div>
+              </div>
+
+              <div class="glass rounded-2xl p-6 min-h-[400px] flex flex-col">
+                <div class="flex items-center justify-between mb-4">
+                  <h3 class="text-sm font-bold flex items-center gap-2">
+                    <i data-lucide="terminal" class="w-4 h-4 text-slate-400"></i>
+                    Salida de Análisis
+                  </h3>
+                  <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 rounded-full bg-ok animate-pulse"></div>
+                    <span class="text-[10px] text-slate-400 uppercase">Live Console</span>
+                  </div>
+                </div>
+                <div id="out" class="flex-1 font-mono text-xs text-slate-300 bg-black/20 rounded-xl p-4 overflow-auto custom-scrollbar border border-white/5 whitespace-pre-wrap">
+                  Esperando parámetros... Pulsa 'Señal' o 'IA' para comenzar.
+                </div>
+                <div id="chartContainer" class="mt-4 rounded-xl overflow-hidden hidden bg-black/40 border border-white/5" style="height: 350px;">
+                   <!-- Chart will be injected here -->
+                </div>
+                <div id="staticChartContainer" class="mt-4 rounded-xl overflow-hidden hidden">
+                   <img id="chartImg" class="w-full h-auto rounded-xl" alt="Análisis gráfico" />
+                </div>
+              </div>
             </div>
           </div>
-          <div class="title" style="margin-top: 10px">Futures</div>
-          <div class="row" style="margin-bottom: 10px">
-            <label>
-              Notional (USDT)
-              <input id="fNotional" type="number" step="0.01" min="1" value="25" />
-            </label>
-            <label>
-              Leverage
-              <input id="fLev" type="number" step="1" min="1" max="125" value="3" />
-            </label>
-            <div class="btns">
-              <button id="btnFutBuy">Abrir LONG</button>
-              <button id="btnFutSell">Abrir SHORT</button>
-              <button id="btnFutClose">Cerrar (reduceOnly)</button>
-              <button id="btnFutPos">Posiciones</button>
-            </div>
-            <div class="muted" id="futMsg"></div>
-          </div>
-          <div class="title">Respuesta</div>
-          <pre id="out" class="muted">Listo.</pre>
-          <div class="title" style="margin-top: 12px">Gráfico</div>
-          <img id="chartImg" alt="chart" style="width: 100%; border-radius: 12px; display: none" />
         </div>
-        <div id="panelPositions" style="display: none">
-          <div class="stack">
-            <div>
-              <div class="title">Paper positions</div>
-              <div class="muted" id="posEmpty">Sin posiciones.</div>
+
+        <!-- Tab: Paper Trading -->
+        <div id="tab-paper" class="tab-content space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div class="glass rounded-2xl p-5 border-l-4 border-l-accent">
+              <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Sync Status</span>
+              <div id="posSyncInfo" class="text-sm font-medium mt-1">Cargando...</div>
             </div>
-            <div class="muted" id="posSyncInfo"></div>
+            <div class="glass rounded-2xl p-5 border-l-4 border-l-ok">
+              <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Total Abiertas</span>
+              <div id="paperOpenCount" class="text-2xl font-bold mt-1">0</div>
+            </div>
           </div>
-          <table id="posTable" style="display: none">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Symbol</th>
-                <th>Side</th>
-                <th>Entry</th>
-                <th>SL</th>
-                <th>TP</th>
-                <th>TF</th>
-                <th>Exch</th>
-              </tr>
-            </thead>
-            <tbody id="posBody"></tbody>
-          </table>
-        </div>
-        <div id="panelLearn" style="display: none">
-          <div class="stack">
-            <div>
-              <div class="title">Reglas activas</div>
-              <div class="muted" id="rulesEmpty">Cargando...</div>
-              <table id="rulesTable" style="display: none">
-                <thead>
+
+          <div class="glass rounded-2xl overflow-hidden border border-border">
+            <div class="px-6 py-4 border-b border-border flex items-center justify-between bg-white/5">
+              <h3 class="text-sm font-bold">Posiciones Activas (Paper)</h3>
+              <button id="btnRefreshPaper" class="text-xs text-accent hover:underline flex items-center gap-1">
+                <i data-lucide="refresh-cw" class="w-3 h-3"></i> Sincronizar
+              </button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm text-left">
+                <thead class="text-[11px] text-slate-400 uppercase tracking-wider bg-white/5">
                   <tr>
-                    <th>Until</th>
-                    <th>Symbol</th>
-                    <th>TF</th>
-                    <th>Título</th>
-                    <th>Extracto</th>
+                    <th class="px-6 py-3 font-semibold">ID</th>
+                    <th class="px-6 py-3 font-semibold">Símbolo</th>
+                    <th class="px-6 py-3 font-semibold">Tipo</th>
+                    <th class="px-6 py-3 font-semibold">Entrada</th>
+                    <th class="px-6 py-3 font-semibold">SL</th>
+                    <th class="px-6 py-3 font-semibold">TP</th>
+                    <th class="px-6 py-3 font-semibold">TF</th>
+                    <th class="px-6 py-3 font-semibold text-right">Acciones</th>
                   </tr>
                 </thead>
-                <tbody id="rulesBody"></tbody>
+                <tbody id="posBody" class="divide-y divide-border">
+                  <!-- JS Injection -->
+                </tbody>
               </table>
-            </div>
-            <div>
-              <div class="title">Últimas lecciones</div>
-              <div class="muted" id="wisdomEmpty">Cargando...</div>
-              <div id="wisdomList" class="stack"></div>
-            </div>
-            <div>
-              <div class="title">Config</div>
-              <div class="kv" id="cfgKv"></div>
+              <div id="posEmpty" class="p-12 text-center text-slate-500 italic text-sm">
+                No hay posiciones abiertas en este momento.
+              </div>
             </div>
           </div>
         </div>
-        <div id="panelGains" style="display: none">
-          <div class="stack">
-            <div class="kpis">
-              <div class="kpi">
-                <div class="kpiLabel">Wallet</div>
-                <div class="kpiVal" id="gWallet">—</div>
-                <div class="kpiSub" id="gAvail">Disponible: —</div>
+
+        <!-- Tab: Futures -->
+        <div id="tab-futures" class="tab-content space-y-6">
+           <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              <!-- Controls -->
+              <div class="lg:col-span-1 glass rounded-2xl p-6 space-y-4">
+                <h3 class="text-sm font-bold flex items-center gap-2">
+                  <i data-lucide="zap" class="w-4 h-4 text-ok"></i>
+                  Ejecución Rápida
+                </h3>
+                <div class="space-y-4">
+                  <div class="space-y-1.5">
+                    <label class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Notional (USDT)</label>
+                    <input id="fNotional" type="number" value="25" class="w-full bg-bg border border-border rounded-xl px-4 py-2.5 text-sm focus:border-accent/50 outline-none transition-all" />
+                  </div>
+                  <div class="space-y-1.5">
+                    <label class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Leverage</label>
+                    <input id="fLev" type="number" value="3" class="w-full bg-bg border border-border rounded-xl px-4 py-2.5 text-sm focus:border-accent/50 outline-none transition-all" />
+                  </div>
+                  <div class="grid grid-cols-2 gap-3 pt-2">
+                    <button id="btnFutBuy" class="bg-ok/20 hover:bg-ok/30 text-ok border border-ok/30 py-3 rounded-xl text-xs font-bold transition-all uppercase">
+                      Buy / Long
+                    </button>
+                    <button id="btnFutSell" class="bg-danger/20 hover:bg-danger/30 text-danger border border-danger/30 py-3 rounded-xl text-xs font-bold transition-all uppercase">
+                      Sell / Short
+                    </button>
+                  </div>
+                  <button id="btnFutClose" class="w-full bg-white/5 hover:bg-white/10 text-white border border-border py-3 rounded-xl text-xs font-bold transition-all uppercase">
+                    Cerrar Posición
+                  </button>
+                </div>
+                <div id="futMsg" class="p-3 bg-accent/5 border border-accent/10 rounded-xl text-[10px] text-accent font-mono break-words hidden"></div>
               </div>
-              <div class="kpi">
-                <div class="kpiLabel">Unrealized PnL</div>
-                <div class="kpiVal" id="gUnreal">—</div>
-                <div class="kpiSub" id="gPos">Posiciones abiertas: —</div>
+
+              <!-- Stats -->
+              <div class="lg:col-span-3 space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div class="glass rounded-2xl p-5 border-l-4 border-l-accent">
+                    <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Wallet Equity</span>
+                    <div id="gWallet" class="text-2xl font-bold mt-1">—</div>
+                    <div id="gAvail" class="text-[10px] text-slate-500 mt-1">Disp: —</div>
+                  </div>
+                  <div class="glass rounded-2xl p-5 border-l-4 border-l-purple-500">
+                    <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Unrealized PnL</span>
+                    <div id="gUnreal" class="text-2xl font-bold mt-1">—</div>
+                    <div id="gPosCount" class="text-[10px] text-slate-500 mt-1">0 abiertas</div>
+                  </div>
+                  <div class="glass rounded-2xl p-5 border-l-4 border-l-ok">
+                    <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">PnL 24h</span>
+                    <div id="gR1" class="text-2xl font-bold mt-1">—</div>
+                  </div>
+                </div>
+
+                <div class="glass rounded-2xl overflow-hidden border border-border">
+                  <div class="px-6 py-4 border-b border-border flex items-center justify-between bg-white/5">
+                    <h3 class="text-sm font-bold">Top Símbolos (24h Vol)</h3>
+                    <i data-lucide="bar-chart-2" class="w-4 h-4 text-slate-400"></i>
+                  </div>
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left">
+                      <thead class="text-[10px] text-slate-400 uppercase tracking-wider bg-white/5">
+                        <tr>
+                          <th class="px-6 py-3 font-semibold">Símbolo</th>
+                          <th class="px-6 py-3 font-semibold">Vol (USDT)</th>
+                          <th class="px-6 py-3 font-semibold">Cambio %</th>
+                          <th class="px-6 py-3 font-semibold text-right">Precio</th>
+                        </tr>
+                      </thead>
+                      <tbody id="aTopBody" class="divide-y divide-border">
+                        <!-- JS -->
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+           </div>
+        </div>
+
+        <!-- Tab: Wisdom -->
+        <div id="tab-wisdom" class="tab-content space-y-6">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="space-y-4">
+              <h3 class="text-sm font-bold flex items-center gap-2">
+                <i data-lucide="shield-check" class="w-4 h-4 text-ok"></i>
+                Reglas de Operación Activas
+              </h3>
+              <div id="rulesEmpty" class="text-xs text-slate-500 italic py-4 hidden">No hay reglas restrictivas activas.</div>
+              <div id="rulesList" class="space-y-3">
+                <!-- JS -->
               </div>
             </div>
-            <div class="kpis">
-              <div class="kpi">
-                <div class="kpiLabel">Realized PnL 24h</div>
-                <div class="kpiVal" id="gR1">—</div>
-              </div>
-              <div class="kpi">
-                <div class="kpiLabel">Realized PnL 7d / 30d</div>
-                <div class="kpiVal" id="gR7">—</div>
-                <div class="kpiSub" id="gR30">—</div>
+            <div class="space-y-4">
+              <h3 class="text-sm font-bold flex items-center gap-2">
+                <i data-lucide="brain" class="w-4 h-4 text-accent"></i>
+                Últimas Lecciones Aprendidas
+              </h3>
+              <div id="wisdomEmpty" class="text-xs text-slate-500 italic py-4 hidden">Sin lecciones registradas.</div>
+              <div id="wisdomList" class="space-y-3">
+                <!-- JS -->
               </div>
             </div>
-            <div class="muted" id="gErr"></div>
-            <details>
-              <summary>Raw</summary>
-              <pre id="gRaw" class="muted"></pre>
-            </details>
           </div>
         </div>
-        <div id="panelAuto" style="display: none">
-          <div class="stack">
-            <div class="kpis">
-              <div class="kpi">
-                <div class="kpiLabel">Autotrade</div>
-                <div class="kpiVal" id="aEnabled">—</div>
-                <div class="kpiSub" id="aLast">—</div>
+
+        <!-- Tab: Engrams -->
+        <div id="tab-engrams" class="tab-content space-y-6">
+          <div class="glass rounded-2xl p-6 space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold flex items-center gap-2">
+                <i data-lucide="database" class="w-4 h-4 text-accent"></i>
+                Base de Datos de Engramas (Memoria)
+              </h3>
+              <div class="flex items-center gap-2">
+                <input id="engramFilter" placeholder="Filtrar símbolo..." class="bg-bg border border-border rounded-lg px-3 py-1 text-xs focus:border-accent/50 outline-none" />
+                <button id="btnRefreshEngrams" class="p-2 glass rounded-lg hover:bg-white/10 transition-all text-slate-400 hover:text-white">
+                  <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                </button>
               </div>
-              <div class="kpi">
-                <div class="kpiLabel">Última decisión</div>
-                <div class="kpiVal" id="aDecision">—</div>
-                <div class="kpiSub" id="aReason">—</div>
-              </div>
             </div>
-            <div>
-              <div class="title">Equity (R)</div>
-              <img id="aEqChart" alt="equity" style="width: 100%; border-radius: 12px; display: none" />
-              <div class="muted" id="aEqMsg"></div>
+            <div id="engramsList" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- JS -->
             </div>
-            <div>
-              <div class="title">Mejores candidatos (volumen 24h)</div>
-              <div class="muted" id="aTopEmpty">Cargando...</div>
-              <table id="aTopTable" style="display: none">
-                <thead>
-                  <tr>
-                    <th>Symbol</th>
-                    <th>Vol (USDT)</th>
-                    <th>%</th>
-                    <th>Last</th>
-                  </tr>
-                </thead>
-                <tbody id="aTopBody"></tbody>
-              </table>
+            <div id="engramsEmpty" class="p-12 text-center text-slate-500 italic text-sm hidden">
+              No hay recuerdos almacenados aún.
             </div>
-            <div>
-              <div class="title">Posiciones (sombra)</div>
-              <div class="muted" id="aPosEmpty">Cargando...</div>
-              <table id="aPosTable" style="display: none">
-                <thead>
-                  <tr>
-                    <th>Status</th>
-                    <th>Symbol</th>
-                    <th>TF</th>
-                    <th>Side</th>
-                    <th>Entry</th>
-                    <th>SL</th>
-                    <th>TP</th>
-                    <th>Opened</th>
-                    <th>Reason</th>
-                  </tr>
-                </thead>
-                <tbody id="aPosBody"></tbody>
-              </table>
-            </div>
-            <details>
-              <summary>Raw</summary>
-              <pre id="aRaw" class="muted"></pre>
-            </details>
           </div>
         </div>
-      </section>
+
+        <!-- Tab: Stats -->
+        <div id="tab-stats" class="tab-content space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="glass rounded-2xl p-5 border-l-4 border-l-ok">
+              <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Net PnL Total</span>
+              <div id="statTotalPnl" class="text-2xl font-bold mt-1 text-ok">$0.00</div>
+            </div>
+            <div class="glass rounded-2xl p-5 border-l-4 border-l-accent">
+              <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Win Rate</span>
+              <div id="statWinRate" class="text-2xl font-bold mt-1 text-accent">0%</div>
+            </div>
+            <div class="glass rounded-2xl p-5 border-l-4 border-l-purple-500">
+              <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Trades Realizados</span>
+              <div id="statTotalTrades" class="text-2xl font-bold mt-1">0</div>
+            </div>
+            <div class="glass rounded-2xl p-5 border-l-4 border-l-warn">
+              <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Mejor Trade</span>
+              <div id="statBestTrade" class="text-2xl font-bold mt-1 text-warn">+0%</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Recent Trades List -->
+            <div class="lg:col-span-2 glass rounded-2xl overflow-hidden border border-border">
+              <div class="px-6 py-4 border-b border-border flex items-center justify-between bg-white/5">
+                <h3 class="text-sm font-bold">Historial Reciente de Ganancias/Perdidas</h3>
+                <i data-lucide="history" class="w-4 h-4 text-slate-400"></i>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-xs text-left">
+                  <thead class="text-[10px] text-slate-400 uppercase tracking-wider bg-white/5">
+                    <tr>
+                      <th class="px-6 py-3 font-semibold">Fecha</th>
+                      <th class="px-6 py-3 font-semibold">Símbolo</th>
+                      <th class="px-6 py-3 font-semibold">Lado</th>
+                      <th class="px-6 py-3 font-semibold">Resultado</th>
+                      <th class="px-6 py-3 font-semibold">Motivo</th>
+                    </tr>
+                  </thead>
+                  <tbody id="statTradesBody" class="divide-y divide-border">
+                    <!-- JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Learning Summary Card -->
+            <div class="lg:col-span-1 space-y-6">
+              <div class="glass rounded-2xl p-6 space-y-4">
+                <h3 class="text-sm font-bold flex items-center gap-2">
+                  <i data-lucide="brain" class="w-4 h-4 text-accent"></i>
+                  Estado del Aprendizaje
+                </h3>
+                <div class="space-y-3">
+                  <div class="p-3 bg-ok/5 border border-ok/20 rounded-xl">
+                    <p class="text-[10px] text-slate-400 uppercase font-bold">Lecciones en Memoria</p>
+                    <p id="statWisdomCount" class="text-xl font-bold text-ok">0</p>
+                  </div>
+                  <div class="p-3 bg-purple-500/5 border border-purple-500/20 rounded-xl">
+                    <p class="text-[10px] text-slate-400 uppercase font-bold">Última Lección</p>
+                    <p id="statLastLesson" class="text-[11px] text-slate-300 italic mt-1 leading-relaxed">Sin lecciones aún.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="glass rounded-2xl p-6 border-l-4 border-l-ok bg-ok/5">
+                <h3 class="text-sm font-bold flex items-center gap-2 text-ok">
+                  <i data-lucide="award" class="w-4 h-4"></i>
+                  Objetivo: 100% Win Rate
+                </h3>
+                <p class="text-[11px] text-slate-400 mt-2">
+                  El bot analiza cada pérdida para generar una **Regla de Exclusión**. Una vez aprendida, el bot nunca repetirá el mismo error bajo las mismas condiciones.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      
+      <!-- Footer Info -->
+      <footer class="h-10 glass border-t border-border flex items-center justify-between px-6 shrink-0 text-[10px] text-slate-500 uppercase tracking-widest font-semibold">
+        <div class="flex items-center gap-4">
+          <span>Aether v0.2.0</span>
+          <span class="flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-ok"></div> System Ready</span>
+        </div>
+        <div id="footerClock">00:00:00 UTC</div>
+      </footer>
     </main>
+
     <script>
+      // Utils
       const $ = (id) => document.getElementById(id);
+      const storage = {
+        get: (key) => localStorage.getItem(key),
+        set: (key, val) => localStorage.setItem(key, val)
+      };
+
+      // State
+      let currentTab = 'signals';
+      let isRefreshing = false;
+
+      // Components
       const out = $("out");
       const chartImg = $("chartImg");
-      const bHealth = $("bHealth");
-      const bAi = $("bAi");
-      const bAuth = $("bAuth");
-      const bRules = $("bRules");
+      const chartContainer = $("chartContainer");
+      const staticChartContainer = $("staticChartContainer");
       const apiKeyInput = $("apiKey");
-      const btnSignal = $("btnSignal");
-      const btnAi = $("btnAi");
-      const btnNews = $("btnNews");
-      const btnPositions = $("btnPositions");
-      const fNotional = $("fNotional");
-      const fLev = $("fLev");
-      const btnFutBuy = $("btnFutBuy");
-      const btnFutSell = $("btnFutSell");
-      const btnFutClose = $("btnFutClose");
-      const btnFutPos = $("btnFutPos");
-      const futMsg = $("futMsg");
-      const kConfVal = $("kConfVal");
-      const kConfSub = $("kConfSub");
-      const kConfBar = $("kConfBar");
-      const kGuardVal = $("kGuardVal");
-      const kGuardReasons = $("kGuardReasons");
-      const posSyncInfo = $("posSyncInfo");
-      const rulesEmpty = $("rulesEmpty");
-      const rulesTable = $("rulesTable");
-      const rulesBody = $("rulesBody");
-      const wisdomEmpty = $("wisdomEmpty");
-      const wisdomList = $("wisdomList");
-      const cfgKv = $("cfgKv");
-      const gWallet = $("gWallet");
-      const gAvail = $("gAvail");
-      const gUnreal = $("gUnreal");
-      const gPos = $("gPos");
-      const gR1 = $("gR1");
-      const gR7 = $("gR7");
-      const gR30 = $("gR30");
-      const gErr = $("gErr");
-      const gRaw = $("gRaw");
-      const aEnabled = $("aEnabled");
-      const aLast = $("aLast");
-      const aDecision = $("aDecision");
-      const aReason = $("aReason");
-      const aEqChart = $("aEqChart");
-      const aEqMsg = $("aEqMsg");
-      const aTopEmpty = $("aTopEmpty");
-      const aTopTable = $("aTopTable");
-      const aTopBody = $("aTopBody");
-      const aPosEmpty = $("aPosEmpty");
-      const aPosTable = $("aPosTable");
-      const aPosBody = $("aPosBody");
-      const aRaw = $("aRaw");
-      let panelCache = null;
+      const footerClock = $("footerClock");
 
-      function setTab(name) {
-        document.querySelectorAll(".tab").forEach((t) => {
-          t.classList.toggle("active", t.dataset.tab === name);
+      let tvChart = null;
+      let candleSeries = null;
+
+      function initChart() {
+        if (tvChart) {
+          chartContainer.innerHTML = "";
+          tvChart = null;
+        }
+        tvChart = LightweightCharts.createChart(chartContainer, {
+          width: chartContainer.clientWidth,
+          height: 350,
+          layout: {
+            backgroundColor: 'transparent',
+            textColor: '#9db0d9',
+          },
+          grid: {
+            vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+            horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+          },
+          crosshair: {
+            mode: LightweightCharts.CrosshairMode.Normal,
+          },
+          priceScale: {
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+          },
+          timeScale: {
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            timeVisible: true,
+          },
         });
-        $("panelOut").style.display = name === "out" ? "" : "none";
-        $("panelPositions").style.display = name === "positions" ? "" : "none";
-        $("panelLearn").style.display = name === "learn" ? "" : "none";
-        $("panelGains").style.display = name === "gains" ? "" : "none";
-        $("panelAuto").style.display = name === "auto" ? "" : "none";
+        candleSeries = tvChart.addCandlestickSeries({
+          upColor: '#5cffb0',
+          downColor: '#ff6b6b',
+          borderDownColor: '#ff6b6b',
+          borderUpColor: '#5cffb0',
+          wickDownColor: '#ff6b6b',
+          wickUpColor: '#5cffb0',
+        });
+
+        // Responsive resize
+        const resizeObserver = new ResizeObserver(entries => {
+          if (entries.length === 0 || !tvChart) return;
+          const { width, height } = entries[0].contentRect;
+          tvChart.applyOptions({ width, height });
+        });
+        resizeObserver.observe(chartContainer);
       }
 
-      document.querySelectorAll(".tab").forEach((t) => {
-        t.addEventListener("click", () => setTab(t.dataset.tab));
+      function renderCandles(candles) {
+        if (!Array.isArray(candles) || candles.length === 0) return;
+        if (!tvChart) initChart();
+        chartContainer.classList.remove('hidden');
+        staticChartContainer.classList.add('hidden');
+        
+        const data = candles.map(c => ({
+          time: c[0] / 1000,
+          open: c[1],
+          high: c[2],
+          low: c[3],
+          close: c[4]
+        }));
+        candleSeries.setData(data);
+        tvChart.timeScale().fitContent();
+      }
+
+      function showStaticChart(url) {
+        if (!url) {
+          staticChartContainer.classList.add('hidden');
+          return;
+        }
+        chartContainer.classList.add('hidden');
+        staticChartContainer.classList.remove('hidden');
+        chartImg.src = url;
+      }
+
+      // Initialize Icons
+      lucide.createIcons();
+
+      // Navigation
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tab = btn.dataset.tab;
+          switchTab(tab);
+        });
       });
 
-      function show(obj) {
-        out.classList.remove("muted");
-        out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
-      }
-
-      function showChart(url) {
-        const u = typeof url === "string" ? url.trim() : "";
-        if (!u) {
-          chartImg.style.display = "none";
-          chartImg.removeAttribute("src");
-          return;
+      function switchTab(tabId) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        
+        const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+        const content = $(`tab-${tabId}`);
+        
+        if (btn && content) {
+          btn.classList.add('active');
+          content.classList.add('active');
+          currentTab = tabId;
+          $("currentTabTitle").textContent = btn.querySelector('span').textContent;
+          
+          // Trigger tab-specific loads
+          if (tabId === 'paper') loadPaperPositions();
+          if (tabId === 'futures') loadFuturesSummary();
+          if (tabId === 'wisdom') loadWisdomAndRules();
+          if (tabId === 'stats') loadStats();
+          if (tabId === 'engrams') loadEngrams();
         }
-        chartImg.src = u;
-        chartImg.style.display = "";
       }
 
-      function showErr(err) {
-        out.classList.remove("muted");
-        const e = err && typeof err === "object" ? err : null;
-        const data = e && "data" in e ? e.data : null;
-        const status = e && "status" in e ? e.status : null;
-        const msg = e && "message" in e ? e.message : null;
-        if (data && typeof data === "object" && data.error === "missing_env" && data.env) {
-          out.textContent = `Falta configurar ${data.env} en el servidor (archivo .env) y reiniciar la API.`;
-          showChart(null);
-          return;
-        }
-        if (data && typeof data === "object" && data.error === "unauthorized") {
-          out.textContent = "No autorizado. Pega tu TRADING_BOT_API_KEY en el campo API Key (Bearer).";
-          showChart(null);
-          return;
-        }
-        const payload = e ? { status, message: msg, data } : err;
-        out.textContent = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
-        showChart(null);
-      }
+      // API Core
+      async function api(path, opts = {}) {
+        let token = apiKeyInput.value.trim() || storage.get("bot_api_key") || "";
+        if (!token && location.hostname === '127.0.0.1') token = 'AETHER_2026';
+        
+        if (apiKeyInput.value !== token) apiKeyInput.value = token;
+        if (token) storage.set("bot_api_key", token);
 
-      function currentKey() {
-        return {
-          exchange: $("exchange").value.trim(),
-          symbol: $("symbol").value.trim(),
-          timeframe: $("timeframe").value.trim()
-        };
-      }
-
-      async function futOrder(side) {
-        futMsg.textContent = "";
-        const { symbol, timeframe } = currentKey();
-        const notionalUsdt = Number(fNotional.value);
-        const leverage = Number(fLev.value);
         try {
-          const res = await api("/api/futures/order", {
-            method: "POST",
-            body: { symbol, timeframe, side, type: "market", notionalUsdt, leverage }
+          const res = await fetch(path, {
+            method: opts.method || "GET",
+            headers: {
+              "content-type": "application/json",
+              ...(token ? { "authorization": `Bearer ${token}` } : {})
+            },
+            body: opts.body ? JSON.stringify(opts.body) : undefined
           });
-          futMsg.textContent = `OK: order ${res?.order?.id ?? "?"} | lev ${res?.leverage ?? "?"}`;
-          show(res);
-        } catch (e) {
-          if (e?.data?.error === "blocked_by_guard") {
-            futMsg.textContent = `Bloqueado por guardia: ${(e.data.reasons ?? []).join(" | ")}`;
-            return;
+
+          const data = await res.json().catch(() => null);
+          
+          if (!res.ok) {
+            const error = new Error(data?.error || "request_failed");
+            error.status = res.status;
+            error.data = data;
+            throw error;
           }
-          if (e?.data?.error === "futures_trading_disabled" || e?.data?.error === "futures_trading_not_confirmed") {
-            futMsg.textContent = "Futures trading OFF en el servidor. Activa FUTURES_TRADING_ENABLED y FUTURES_TRADING_CONFIRM.";
-            return;
-          }
-          showErr(e);
-        }
-      }
-
-      async function futClose() {
-        futMsg.textContent = "";
-        const { symbol } = currentKey();
-        try {
-          const res = await api("/api/futures/close", { method: "POST", body: { symbol } });
-          futMsg.textContent = res?.closed ? `Cierre enviado: ${res?.orderId ?? "?"}` : "No hay posición abierta.";
-          show(res);
+          return data;
         } catch (e) {
-          showErr(e);
-        }
-      }
-
-      async function futPositions() {
-        futMsg.textContent = "";
-        try {
-          const res = await api("/api/futures/positions");
-          futMsg.textContent = `Posiciones: ${Array.isArray(res?.items) ? res.items.length : 0}`;
-          show(res);
-        } catch (e) {
-          showErr(e);
-        }
-      }
-
-      async function api(path, opts) {
-        const token = String(apiKeyInput?.value ?? localStorage.getItem("bot_api_key") ?? "").trim();
-        if (apiKeyInput && apiKeyInput.value !== token) apiKeyInput.value = token;
-        if (apiKeyInput) localStorage.setItem("bot_api_key", token);
-        const res = await fetch(path, {
-          method: opts?.method ?? "GET",
-          headers: {
-            "content-type": "application/json",
-            ...(token ? { authorization: `Bearer ${token}` } : {})
-          },
-          body: opts?.body ? JSON.stringify(opts.body) : undefined
-        });
-        const txt = await res.text();
-        let data = null;
-        try {
-          data = txt ? JSON.parse(txt) : null;
-        } catch {
-          data = txt;
-        }
-        if (!res.ok) {
-          const e = new Error("request_failed");
-          e.status = res.status;
-          e.data = data;
+          console.error(`API Error [${path}]:`, e);
           throw e;
         }
-        return data;
       }
 
-      function isUnauthorized(err) {
-        const e = err && typeof err === "object" ? err : null;
-        const data = e && "data" in e ? e.data : null;
-        return Boolean(data && typeof data === "object" && data.error === "unauthorized");
+      // Display Helpers
+      function log(msg, type = 'info') {
+        out.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2);
+        out.scrollTop = 0;
       }
 
-      async function refreshHealth() {
+      function showErr(e) {
+        const msg = e.data?.message || e.message || "Error desconocido";
+        if (e.status === 401) {
+          log("⚠️ NO AUTORIZADO: Configura tu API Key arriba para acceder a esta función. Tu llave configurada en el servidor es: AETHER_2026", 'error');
+        } else {
+          log({ error: true, status: e.status, message: msg, data: e.data }, 'error');
+        }
+      }
+
+      // Handlers: Signals & IA
+      $("btnSignal").onclick = async () => {
+        log("🔍 Escaneando señal...");
+        chartContainer.classList.add('hidden');
+        staticChartContainer.classList.add('hidden');
+        try {
+          const res = await api("/api/signal", {
+            method: "POST",
+            body: {
+              exchange: $("exchange").value,
+              symbol: $("symbol").value,
+              timeframe: $("timeframe").value
+            }
+          });
+          log(res.text || res);
+          if (res.candles) {
+            renderCandles(res.candles);
+          } else if (res.chartUrl) {
+            showStaticChart(res.chartUrl);
+          }
+          updateKPIs(res);
+        } catch (e) { showErr(e); }
+      };
+
+      $("btnAi").onclick = async () => {
+        log("🧠 Consultando IA (DeepSeek)... esto puede tardar unos segundos.");
+        chartContainer.classList.add('hidden');
+        staticChartContainer.classList.add('hidden');
+        try {
+          const res = await api("/api/ai", {
+            method: "POST",
+            body: {
+              exchange: $("exchange").value,
+              symbol: $("symbol").value,
+              timeframe: $("timeframe").value
+            }
+          });
+          log(res.text || res);
+          if (res.candles) {
+            renderCandles(res.candles);
+          } else if (res.chartUrl) {
+            showStaticChart(res.chartUrl);
+          }
+        } catch (e) { showErr(e); }
+      };
+
+      $("btnNews").onclick = async () => {
+        log("📰 Obteniendo últimas noticias...");
+        try {
+          const res = await api("/api/news");
+          log(res);
+        } catch (e) { showErr(e); }
+      };
+
+      function updateKPIs(res) {
+        if (!res.guard) return;
+        const conf = res.signal?.confidence || 0;
+        const pct = Math.round(conf * 100);
+        $("kConfVal").textContent = `${pct}%`;
+        $("kConfBar").style.width = `${pct}%`;
+        
+        const g = res.guard;
+        $("kGuardVal").textContent = g.allow ? "OK" : "BLOQUEAR";
+        $("kGuardVal").className = g.allow ? "text-2xl font-bold text-ok" : "text-2xl font-bold text-danger";
+        $("kGuardReasons").textContent = (g.reasons || []).join(", ") || "Filtros de seguridad superados.";
+      }
+
+      // Handlers: Paper Trading
+      async function loadPaperPositions() {
+        const body = $("posBody");
+        const empty = $("posEmpty");
+        try {
+          const sync = await api("/api/paper/sync", { method: "POST" });
+          $("posSyncInfo").textContent = `Evaluadas: ${sync.evaluated || 0} | Cerradas: ${sync.closed || 0}`;
+          
+          const res = await api("/api/paper/positions");
+          const items = res.items || [];
+          $("paperOpenCount").textContent = items.length;
+          
+          body.innerHTML = "";
+          if (items.length === 0) {
+            empty.classList.remove('hidden');
+          } else {
+            empty.classList.add('hidden');
+            items.forEach(p => {
+              const tr = document.createElement('tr');
+              tr.className = "hover:bg-white/5 transition-colors";
+              tr.innerHTML = `
+                <td class="px-6 py-4 font-mono text-[10px] text-slate-500">${p.id.slice(-6)}</td>
+                <td class="px-6 py-4 font-bold text-white">${p.symbol}</td>
+                <td class="px-6 py-4">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold ${p.side === 'LONG' ? 'bg-ok/10 text-ok' : 'bg-danger/10 text-danger'}">${p.side}</span>
+                </td>
+                <td class="px-6 py-4 font-mono text-xs">${p.entry}</td>
+                <td class="px-6 py-4 font-mono text-xs text-danger">${p.sl || '—'}</td>
+                <td class="px-6 py-4 font-mono text-xs text-ok">${p.tp || '—'}</td>
+                <td class="px-6 py-4 text-xs text-slate-400">${p.timeframe}</td>
+                <td class="px-6 py-4 text-right">
+                   <button onclick="closePaper('${p.id}')" class="text-xs bg-danger/10 hover:bg-danger/20 text-danger px-3 py-1 rounded-lg transition-all">Cerrar</button>
+                </td>
+              `;
+              body.appendChild(tr);
+            });
+          }
+        } catch (e) { console.error(e); }
+      }
+
+      window.closePaper = async (id) => {
+        if (!confirm("¿Cerrar posición paper?")) return;
+        try {
+          // Note: we need exit price, let's fetch it or just use a placeholder if the API requires it
+          const res = await api("/api/paper/close", { method: "POST", body: { id, exitPrice: 0, reason: "MANUAL" } });
+          loadPaperPositions();
+        } catch (e) { alert(e.message); }
+      };
+
+      // Handlers: Futures
+      async function loadFuturesSummary() {
+        try {
+          const res = await api("/api/futures/summary");
+          $("gWallet").textContent = `$${Number(res.totalWalletBalance || 0).toFixed(2)}`;
+          $("gAvail").textContent = `Disp: $${Number(res.availableBalance || 0).toFixed(2)}`;
+          $("gUnreal").textContent = `$${Number(res.totalUnrealizedProfit || 0).toFixed(2)}`;
+          $("gUnreal").className = `text-2xl font-bold mt-1 ${res.totalUnrealizedProfit >= 0 ? 'text-ok' : 'text-danger'}`;
+          
+          const pos = await api("/api/futures/positions");
+          $("gPosCount").textContent = `${(pos.items || []).length} abiertas`;
+          
+          const top = await api("/api/futures/top?limit=8");
+          const topBody = $("aTopBody");
+          topBody.innerHTML = "";
+          (top.items || []).forEach(it => {
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-white/5 transition-colors";
+            tr.innerHTML = `
+              <td class="px-6 py-3 font-bold text-white">${it.symbol}</td>
+              <td class="px-6 py-3 text-slate-400">$${(it.quoteVolume / 1000000).toFixed(1)}M</td>
+              <td class="px-6 py-3 font-medium ${it.priceChangePercent >= 0 ? 'text-ok' : 'text-danger'}">${it.priceChangePercent}%</td>
+              <td class="px-6 py-3 text-right font-mono">${it.lastPrice}</td>
+            `;
+            topBody.appendChild(tr);
+          });
+        } catch (e) { console.error(e); }
+      }
+
+      $("btnFutBuy").onclick = () => futOrder('buy');
+      $("btnFutSell").onclick = () => futOrder('sell');
+      $("btnFutClose").onclick = async () => {
+        const symbol = $("symbol").value;
+        try {
+          const res = await api("/api/futures/close", { method: "POST", body: { symbol } });
+          $("futMsg").textContent = res.closed ? "✅ Posición cerrada" : "❌ No hay posición";
+          $("futMsg").classList.remove('hidden');
+          loadFuturesSummary();
+        } catch (e) { showErr(e); }
+      };
+
+      async function futOrder(side) {
+        const body = {
+          symbol: $("symbol").value,
+          timeframe: $("timeframe").value,
+          side: side,
+          notionalUsdt: Number($("fNotional").value),
+          leverage: Number($("fLev").value)
+        };
+        try {
+          const res = await api("/api/futures/order", { method: "POST", body });
+          $("futMsg").textContent = `✅ Orden enviada: ${res.order?.id || 'OK'}`;
+          $("futMsg").classList.remove('hidden');
+          loadFuturesSummary();
+        } catch (e) { 
+           $("futMsg").textContent = `❌ Error: ${e.data?.error || e.message}`;
+           $("futMsg").classList.remove('hidden');
+        }
+      }
+
+      async function loadStats() {
+        try {
+          const tradesRes = await api("/api/paper/trades");
+          const trades = tradesRes.items || [];
+          const wisdomRes = await api("/api/wisdom?limit=10");
+          const wisdom = wisdomRes.items || [];
+
+          // PnL & Win Rate
+          let totalPnl = 0;
+          let wins = 0;
+          let best = 0;
+          trades.forEach(t => {
+            const pnl = parseFloat(t.resultado) || 0;
+            totalPnl += pnl;
+            if (pnl > 0) wins++;
+            if (pnl > best) best = pnl;
+          });
+
+          $("statTotalPnl").textContent = `${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}%`;
+          $("statTotalPnl").className = `text-2xl font-bold mt-1 ${totalPnl >= 0 ? 'text-ok' : 'text-danger'}`;
+          
+          const wr = trades.length > 0 ? (wins / trades.length * 100) : 0;
+          $("statWinRate").textContent = `${wr.toFixed(1)}%`;
+          $("statTotalTrades").textContent = trades.length;
+          $("statBestTrade").textContent = `+${best.toFixed(2)}%`;
+
+          // Wisdom
+          $("statWisdomCount").textContent = wisdomRes.total || 0;
+          if (wisdom.length > 0) {
+            $("statLastLesson").textContent = `"${wisdom[0].title}" - ${wisdom[0].ts}`;
+          }
+
+          // Trades Table
+          const body = $("statTradesBody");
+          body.innerHTML = "";
+          trades.slice().reverse().forEach(t => {
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-white/5 transition-colors";
+            const pnl = parseFloat(t.resultado) || 0;
+            const date = new Date(t.fecha).toLocaleDateString() + ' ' + new Date(t.fecha).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            tr.innerHTML = `
+              <td class="px-6 py-3 text-slate-400 font-mono text-[10px]">${date}</td>
+              <td class="px-6 py-3 font-bold text-white">${t.symbol}</td>
+              <td class="px-6 py-3">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${t.side === 'LONG' ? 'bg-ok/10 text-ok' : 'bg-danger/10 text-danger'}">${t.side}</span>
+              </td>
+              <td class="px-6 py-3 font-bold ${pnl >= 0 ? 'text-ok' : 'text-danger'}">${t.resultado}</td>
+              <td class="px-6 py-3 text-slate-500 italic text-[10px]">${t.motivo}</td>
+            `;
+            body.appendChild(tr);
+          });
+        } catch (e) { console.error(e); }
+      }
+
+      async function loadEngrams() {
+        const filter = $("engramFilter").value || "GLOBAL";
+        try {
+          const res = await api(`/api/engrams?symbol=${filter}`);
+          const list = $("engramsList");
+          const empty = $("engramsEmpty");
+          list.innerHTML = "";
+          
+          if (!res.items || res.items.length === 0) {
+            empty.classList.remove('hidden');
+          } else {
+            empty.classList.add('hidden');
+            res.items.forEach(e => {
+              const div = document.createElement('div');
+              div.className = "glass p-4 rounded-xl border border-white/5 space-y-2";
+              div.innerHTML = `
+                <div class="flex justify-between items-start">
+                  <span class="px-2 py-0.5 bg-accent/10 text-accent text-[10px] font-bold rounded">${e.symbol}</span>
+                  <span class="text-[9px] text-slate-500">${new Date(e.timestamp).toLocaleString()}</span>
+                </div>
+                <p class="text-xs text-slate-300 leading-relaxed">${e.content}</p>
+                <div class="flex items-center justify-between pt-2 border-t border-white/5">
+                  <span class="text-[9px] text-slate-500 uppercase">${e.source}</span>
+                  <div class="flex items-center gap-1">
+                    <div class="w-1.5 h-1.5 rounded-full ${e.sentiment_score > 50 ? 'bg-ok' : 'bg-danger'}"></div>
+                    <span class="text-[10px] text-slate-400">${e.sentiment_score}% Conf.</span>
+                  </div>
+                </div>
+              `;
+              list.appendChild(div);
+            });
+          }
+        } catch (e) { console.error(e); }
+      }
+
+      $("btnRefreshEngrams").onclick = loadEngrams;
+      $("engramFilter").onkeyup = (e) => { if (e.key === 'Enter') loadEngrams(); };
+
+      // Handlers: Wisdom & Rules
+      async function loadWisdomAndRules() {
+        try {
+          const rulesRes = await api("/api/rules/active");
+          const rulesList = $("rulesList");
+          const rulesItems = rulesRes.items || [];
+          rulesList.innerHTML = "";
+          if (rulesItems.length === 0) $("rulesEmpty").classList.remove('hidden');
+          else {
+            $("rulesEmpty").classList.add('hidden');
+            rulesItems.forEach(r => {
+              const div = document.createElement('div');
+              div.className = "glass p-4 rounded-xl border-l-4 border-l-danger";
+              div.innerHTML = `
+                <div class="flex justify-between items-start mb-2">
+                  <span class="text-xs font-bold text-white">${r.symbol || 'Global'} (${r.timeframe || 'All'})</span>
+                  <span class="text-[9px] text-slate-500 uppercase">Hasta: ${r.until}</span>
+                </div>
+                <p class="text-xs text-slate-300 font-medium">${r.title}</p>
+                <p class="text-[10px] text-slate-500 mt-2 italic line-clamp-2">${r.excerpt}</p>
+              `;
+              rulesList.appendChild(div);
+            });
+          }
+
+          const wisdomRes = await api("/api/wisdom?limit=10");
+          const wisdomList = $("wisdomList");
+          const wisdomItems = wisdomRes.items || [];
+          wisdomList.innerHTML = "";
+          if (wisdomItems.length === 0) $("wisdomEmpty").classList.remove('hidden');
+          else {
+            $("wisdomEmpty").classList.add('hidden');
+            wisdomItems.reverse().forEach(w => {
+              const div = document.createElement('div');
+              div.className = "glass p-4 rounded-xl border-l-4 border-l-accent";
+              div.innerHTML = `
+                <div class="flex justify-between items-start mb-2">
+                  <span class="text-xs font-bold text-white">${w.title}</span>
+                  <span class="text-[9px] text-slate-500 uppercase">${w.ts}</span>
+                </div>
+                <p class="text-[10px] text-slate-400 line-clamp-3">${w.text.slice(0, 300)}...</p>
+              `;
+              wisdomList.appendChild(div);
+            });
+          }
+        } catch (e) { console.error(e); }
+      }
+
+      // Background Monitoring
+      async function monitor() {
         try {
           const h = await api("/api/health");
-          bHealth.classList.remove("bad");
-          bHealth.classList.add("ok");
-          bHealth.textContent = `Health: OK`;
-        } catch {
-          bHealth.classList.remove("ok");
-          bHealth.classList.add("bad");
-          bHealth.textContent = "Health: ERROR";
-        }
-      }
+          $("healthVal").textContent = "OK";
+          $("healthVal").className = "font-medium text-ok";
+          $("statusDot").className = "w-2 h-2 rounded-full bg-ok animate-pulse";
+          
+          const m = await api("/api/meta");
+          $("authVal").textContent = m.authorized ? "OK" : "ERROR";
+          $("authVal").className = `font-medium ${m.authorized ? 'text-ok' : 'text-danger'}`;
 
-      function setConf(conf) {
-        const c = Number(conf);
-        const ok = Number.isFinite(c) ? Math.max(0, Math.min(1, c)) : null;
-        const pct = ok === null ? null : Math.round(ok * 100);
-        kConfVal.textContent = pct === null ? "—" : `${pct}%`;
-        kConfBar.style.width = pct === null ? "0%" : `${pct}%`;
-        if (pct === null) {
-          kConfBar.style.background = "rgba(95, 168, 255, 0.8)";
-          return;
-        }
-        kConfBar.style.background =
-          pct >= 75 ? "rgba(92, 255, 176, 0.85)" : pct >= 55 ? "rgba(255, 209, 102, 0.9)" : "rgba(255, 107, 107, 0.85)";
-      }
-
-      function setGuard(guard) {
-        const g = guard && typeof guard === "object" ? guard : null;
-        const enabled = Boolean(g?.enabled);
-        const allow = g?.allow === true;
-        const txt = enabled ? (allow ? "OK" : "BLOQUEAR") : "OFF";
-        kGuardVal.textContent = txt;
-        const reasons = Array.isArray(g?.reasons) ? g.reasons : [];
-        kGuardReasons.textContent = reasons.length ? reasons.join("\n") : "";
-      }
-
-      async function refreshPanel() {
-        let meta = null;
-        try {
-          meta = await api("/api/meta");
-        } catch {
-          meta = null;
-        }
-
-        const deepOk = Boolean(meta?.deepseekKey);
-        const mem = Number.isFinite(Number(meta?.wisdomTotal)) ? Number(meta.wisdomTotal) : 0;
-        bAi.classList.toggle("ok", deepOk);
-        bAi.classList.toggle("bad", !deepOk);
-        bAi.textContent = `IA: ${deepOk ? "OK" : "FALTA"} | Mem: ${mem}`;
-
-        const apiKeyEnabled = Boolean(meta?.apiKeyEnabled);
-        const authorized = Boolean(meta?.authorized);
-        bAuth.classList.remove("bad");
-        bAuth.classList.toggle("ok", apiKeyEnabled && authorized);
-        bAuth.textContent = apiKeyEnabled ? (authorized ? "API: Auth OK" : "API: No autorizado") : "API: Auth OFF";
-
-        bRules.classList.remove("ok");
-        bRules.classList.remove("bad");
-        bRules.textContent = authorized ? "Reglas: ..." : "Reglas: (auth)";
-
-        cfgKv.innerHTML = "";
-        if (!authorized) {
-          const kk = document.createElement("div");
-          kk.className = "k";
-          kk.textContent = "Auth";
-          const vv = document.createElement("div");
-          vv.textContent = "Pega tu TRADING_BOT_API_KEY arriba.";
-          cfgKv.appendChild(kk);
-          cfgKv.appendChild(vv);
-          return;
-        }
-
-        try {
-          const p = await api("/api/panel");
-          panelCache = p && typeof p === "object" ? p : null;
-          const m = panelCache?.meta ?? null;
-          const cfg = panelCache?.config ?? null;
-
-          const rules = Number.isFinite(Number(m?.activeRules)) ? Number(m.activeRules) : 0;
-          bRules.classList.toggle("bad", rules >= 1);
-          bRules.classList.toggle("ok", rules === 0);
-          bRules.textContent = `Reglas: ${rules}`;
-
-          const entries = [
-            ["Wisdom Guard", cfg?.wisdomGuardEnabled ? "ON" : "OFF"],
-            ["ENGRAM", cfg?.engramEnabled ? "ON" : "OFF"],
-            ["Guard min confidence", Number.isFinite(Number(cfg?.guardMinConfidence)) ? String(cfg.guardMinConfidence) : "N/A"],
-            ["Ban enabled", cfg?.learnBanEnabled ? "ON" : "OFF"],
-            ["Ban losses", Number.isFinite(Number(cfg?.learnBanLosses)) ? String(cfg.learnBanLosses) : "N/A"],
-            ["Ban hours", Number.isFinite(Number(cfg?.learnBanHours)) ? String(cfg.learnBanHours) : "N/A"],
-            ["TP1 close %", Number.isFinite(Number(cfg?.paperTp1ClosePct)) ? String(cfg.paperTp1ClosePct) : "N/A"]
-          ];
-          for (const [k, v] of entries) {
-            const kk = document.createElement("div");
-            kk.className = "k";
-            kk.textContent = k;
-            const vv = document.createElement("div");
-            vv.textContent = v;
-            cfgKv.appendChild(kk);
-            cfgKv.appendChild(vv);
-          }
-        } catch {
-          bRules.textContent = "Reglas: ?";
-        }
-      }
-
-      async function loadPositions() {
-        try {
-          const sync = await api("/api/paper/sync", { method: "POST", body: {} });
-          const c = Number(sync?.closed) || 0;
-          const p = Number(sync?.partial) || 0;
-          posSyncInfo.textContent = `Paper Sync: evaluadas=${Number(sync?.evaluated) || 0} | cerradas=${c} | parciales=${p}`;
-        } catch {
-          posSyncInfo.textContent = "";
-        }
-        const data = await api("/api/paper/positions");
-        const items = Array.isArray(data?.items) ? data.items : [];
-        const empty = $("posEmpty");
-        const table = $("posTable");
-        const body = $("posBody");
-        body.innerHTML = "";
-        if (!items.length) {
-          empty.style.display = "";
-          table.style.display = "none";
-          return;
-        }
-        empty.style.display = "none";
-        table.style.display = "";
-        for (const p of items) {
-          const tr = document.createElement("tr");
-          const cells = [
-            p?.id,
-            p?.symbol,
-            p?.side,
-            p?.entry,
-            p?.sl,
-            p?.tp,
-            p?.timeframe,
-            p?.exchange
-          ];
-          for (const c of cells) {
-            const td = document.createElement("td");
-            td.textContent = c === null || c === undefined ? "" : String(c);
-            tr.appendChild(td);
-          }
-          body.appendChild(tr);
-        }
-      }
-
-      async function loadRulesAndWisdom() {
-        rulesEmpty.textContent = "Cargando...";
-        rulesTable.style.display = "none";
-        rulesBody.innerHTML = "";
-        wisdomEmpty.textContent = "Cargando...";
-        wisdomList.innerHTML = "";
-        try {
-          const rules = await api("/api/rules/active");
-          const items = Array.isArray(rules?.items) ? rules.items : [];
-          if (!items.length) {
-            rulesEmpty.textContent = "Sin reglas activas.";
-          } else {
-            rulesEmpty.textContent = "";
-            rulesTable.style.display = "";
-            for (const r of items.slice(0, 60)) {
-              const tr = document.createElement("tr");
-              const cells = [
-                r?.until ?? "",
-                r?.symbol ?? "",
-                r?.timeframe ?? "",
-                r?.title ?? "",
-                r?.excerpt ?? ""
-              ];
-              for (const c of cells) {
-                const td = document.createElement("td");
-                td.textContent = c === null || c === undefined ? "" : String(c);
-                tr.appendChild(td);
-              }
-              rulesBody.appendChild(tr);
+          // SSH & VPS Status
+          try {
+            const ssh = await api("/api/ssh/status");
+            if (ssh.ok) {
+              $("sshVal").textContent = "CONNECTED";
+              $("sshVal").className = "text-ok";
+              $("vpsStats").classList.remove('hidden');
+              $("vpsUptime").textContent = ssh.output.split(',')[0].replace('up', '').trim();
             }
+          } catch {
+            $("sshVal").textContent = "DISCONNECTED";
+            $("sshVal").className = "text-danger";
           }
-        } catch (e) {
-          rulesEmpty.textContent = isUnauthorized(e)
-            ? "No autorizado. Pega tu TRADING_BOT_API_KEY arriba."
-            : "Error cargando reglas.";
-        }
-        try {
-          const w = await api("/api/wisdom?limit=18");
-          const items = Array.isArray(w?.items) ? w.items : [];
-          if (!items.length) {
-            wisdomEmpty.textContent = "Sin lecciones todavía.";
-          } else {
-            wisdomEmpty.textContent = "";
-            for (const it of items.slice().reverse()) {
-              const d = document.createElement("details");
-              const s = document.createElement("summary");
-              const until = it?.until ? ` | hasta ${String(it.until)}` : "";
-              s.textContent = `${String(it?.ts ?? "").trim()} ${String(it?.title ?? "").trim()}${until}`.trim();
-              const pre = document.createElement("pre");
-              pre.textContent = String(it?.text ?? "");
-              d.appendChild(s);
-              d.appendChild(pre);
-              wisdomList.appendChild(d);
-            }
-          }
-        } catch (e) {
-          wisdomEmpty.textContent = isUnauthorized(e)
-            ? "No autorizado. Pega tu TRADING_BOT_API_KEY arriba."
-            : "Error cargando lecciones.";
-        }
-      }
-
-      function fmtMoney(v) {
-        const n = Number(v);
-        if (!Number.isFinite(n)) return "—";
-        const sign = n > 0 ? "+" : "";
-        return `${sign}${n.toFixed(2)}`;
-      }
-
-      async function loadFuturesSummary() {
-        gErr.textContent = "";
-        gRaw.textContent = "";
-        gWallet.textContent = "—";
-        gAvail.textContent = "Disponible: —";
-        gUnreal.textContent = "—";
-        gPos.textContent = "Posiciones abiertas: —";
-        gR1.textContent = "—";
-        gR7.textContent = "—";
-        gR30.textContent = "—";
-        try {
-          const s = await api("/api/futures/summary");
-          const a = s?.account ?? {};
-          const r = s?.realized ?? {};
-          const p = s?.positions ?? {};
-          gWallet.textContent = fmtMoney(a.walletBalance);
-          gAvail.textContent = `Disponible: ${fmtMoney(a.availableBalance)}`;
-          gUnreal.textContent = fmtMoney(a.unrealizedProfit ?? p.unrealizedProfit);
-          gPos.textContent = `Posiciones abiertas: ${Number(p.openCount) || 0}`;
-          gR1.textContent = fmtMoney(r.d1);
-          gR7.textContent = `${fmtMoney(r.d7)}`;
-          gR30.textContent = `30d: ${fmtMoney(r.d30)}`;
-          gRaw.textContent = JSON.stringify(s, null, 2);
-        } catch (e) {
-          const data = e && typeof e === "object" && "data" in e ? e.data : null;
-          if (data && typeof data === "object" && data.error === "missing_env" && data.env) {
-            gErr.textContent =
-              `Falta configurar ${data.env} en el servidor (.env). Usa un API key de Binance con permisos SOLO LECTURA y restringido por IP.`;
-          } else if (isUnauthorized(e)) {
-            gErr.textContent = "No autorizado. Pega tu TRADING_BOT_API_KEY arriba.";
-          } else {
-            gErr.textContent = "Error cargando ganancias.";
-          }
-        }
-      }
-
-      function fmtTs(ms) {
-        const n = Number(ms);
-        if (!Number.isFinite(n) || n <= 0) return "—";
-        try {
-          return new Date(n).toISOString().replace("T", " ").slice(0, 19) + "Z";
         } catch {
-          return "—";
+          $("healthVal").textContent = "OFF";
+          $("healthVal").className = "font-medium text-danger";
+          $("statusDot").className = "w-2 h-2 rounded-full bg-danger animate-pulse";
         }
       }
 
-      async function loadAutoPanel() {
-        aEnabled.textContent = "—";
-        aLast.textContent = "—";
-        aDecision.textContent = "—";
-        aReason.textContent = "—";
-        aRaw.textContent = "";
-        aEqMsg.textContent = "";
-        aEqChart.style.display = "none";
-        aEqChart.removeAttribute("src");
-        aTopEmpty.textContent = "Cargando...";
-        aTopTable.style.display = "none";
-        aTopBody.innerHTML = "";
-        aPosEmpty.textContent = "Cargando...";
-        aPosTable.style.display = "none";
-        aPosBody.innerHTML = "";
-        try {
-          const s = await api("/api/futures/auto/status");
-          const st = s?.status ?? {};
-          const enabled = st?.enabled === true;
-          const testnet = st?.testnet === true;
-          aEnabled.textContent = enabled ? (testnet ? "ON (testnet)" : "ON") : "OFF";
-          aLast.textContent = `Last run: ${fmtTs(st?.lastRunAt)} | Last close: ${fmtTs(st?.lastCloseAt)}`;
-          const d = st?.lastDecision ?? null;
-          aDecision.textContent = d ? String(d.action ?? "—") : "—";
-          aReason.textContent = d ? JSON.stringify(d).slice(0, 220) : "—";
-          aRaw.textContent = JSON.stringify(s, null, 2);
-        } catch (e) {
-          aEnabled.textContent = "—";
-          aLast.textContent = isUnauthorized(e) ? "No autorizado." : "Error cargando estado.";
-        }
-        try {
-          const eq = await api("/api/futures/equity?limit=250");
-          const u = typeof eq?.chartUrl === "string" ? eq.chartUrl.trim() : "";
-          if (u) {
-            aEqChart.src = u;
-            aEqChart.style.display = "";
-            aEqMsg.textContent = "";
-          } else {
-            aEqMsg.textContent = "Equity: sin datos todavía.";
-          }
-        } catch (e) {
-          aEqMsg.textContent = isUnauthorized(e) ? "Equity: no autorizado." : "Equity: error.";
-        }
-        try {
-          const top = await api("/api/futures/top?limit=20&minQuoteVol=50000000");
-          const items = Array.isArray(top?.items) ? top.items : [];
-          if (!items.length) {
-            aTopEmpty.textContent = "Sin datos.";
-          } else {
-            aTopEmpty.textContent = "";
-            aTopTable.style.display = "";
-            for (const it of items) {
-              const tr = document.createElement("tr");
-              const vol = Number(it?.quoteVolume);
-              const pct = Number(it?.changePct);
-              const last = Number(it?.lastPrice);
-              const cells = [
-                it?.symbol ?? "",
-                Number.isFinite(vol) ? Math.round(vol).toLocaleString("en-US") : "",
-                Number.isFinite(pct) ? `${pct.toFixed(2)}%` : "",
-                Number.isFinite(last) ? last.toFixed(6) : ""
-              ];
-              for (const c of cells) {
-                const td = document.createElement("td");
-                td.textContent = c === null || c === undefined ? "" : String(c);
-                tr.appendChild(td);
-              }
-              aTopBody.appendChild(tr);
-            }
-          }
-        } catch (e) {
-          aTopEmpty.textContent = isUnauthorized(e) ? "No autorizado. Pega tu TRADING_BOT_API_KEY arriba." : "Error cargando candidatos.";
-        }
-        try {
-          const p = await api("/api/futures/shadow?last=60");
-          const items = Array.isArray(p?.items) ? p.items : [];
-          if (!items.length) {
-            aPosEmpty.textContent = "Sin posiciones.";
-            return;
-          }
-          aPosEmpty.textContent = "";
-          aPosTable.style.display = "";
-          for (const it of items) {
-            const tr = document.createElement("tr");
-            const cells = [
-              it?.status ?? "",
-              it?.symbol ?? "",
-              it?.timeframe ?? "",
-              it?.side ?? "",
-              it?.entry ?? "",
-              it?.sl ?? "",
-              it?.tp2 ?? it?.tp ?? "",
-              fmtTs(it?.openedAt),
-              it?.reason ?? ""
-            ];
-            for (const c of cells) {
-              const td = document.createElement("td");
-              td.textContent = c === null || c === undefined ? "" : String(c);
-              tr.appendChild(td);
-            }
-            aPosBody.appendChild(tr);
-          }
-        } catch (e) {
-          aPosEmpty.textContent = isUnauthorized(e) ? "No autorizado. Pega tu TRADING_BOT_API_KEY arriba." : "Error cargando posiciones.";
-        }
-      }
+      // Global Refresh
+      $("btnRefresh").onclick = () => {
+        monitor();
+        switchTab(currentTab);
+      };
 
-      btnSignal.addEventListener("click", async () => {
-        btnSignal.disabled = true;
-        try {
-          setTab("out");
-          const exchange = $("exchange").value.trim();
-          const symbol = $("symbol").value.trim();
-          const timeframe = $("timeframe").value.trim();
-          const data = await api("/api/signal", { method: "POST", body: { exchange, symbol, timeframe } });
-          show(data?.text ?? data);
-          showChart(data?.chartUrl ?? null);
-          const conf = data?.signal?.model?.confidence ?? data?.signal?.model?.baseConfidence ?? null;
-          setConf(conf);
-          kConfSub.textContent = `${String(data?.signal?.model?.strategyName ?? "").trim()} ${String(data?.signal?.model?.strategyReason ?? "").trim()}`
-            .trim()
-            .slice(0, 120) || "—";
-          setGuard(data?.guard ?? null);
-        } catch (e) {
-          showErr(e);
-        } finally {
-          btnSignal.disabled = false;
-        }
-      });
+      // Clock
+      setInterval(() => {
+        footerClock.textContent = new Date().toISOString().replace('T', ' ').split('.')[0] + ' UTC';
+      }, 1000);
 
-      btnFutBuy.addEventListener("click", async () => {
-        btnFutBuy.disabled = true;
-        try {
-          await futOrder("buy");
-        } finally {
-          btnFutBuy.disabled = false;
-        }
-      });
-      btnFutSell.addEventListener("click", async () => {
-        btnFutSell.disabled = true;
-        try {
-          await futOrder("sell");
-        } finally {
-          btnFutSell.disabled = false;
-        }
-      });
-      btnFutClose.addEventListener("click", async () => {
-        btnFutClose.disabled = true;
-        try {
-          await futClose();
-        } finally {
-          btnFutClose.disabled = false;
-        }
-      });
-      btnFutPos.addEventListener("click", async () => {
-        btnFutPos.disabled = true;
-        try {
-          await futPositions();
-        } finally {
-          btnFutPos.disabled = false;
-        }
-      });
-
-      btnAi.addEventListener("click", async () => {
-        btnAi.disabled = true;
-        try {
-          setTab("out");
-          const exchange = $("exchange").value.trim();
-          const symbol = $("symbol").value.trim();
-          const timeframe = $("timeframe").value.trim();
-          const data = await api("/api/ai", { method: "POST", body: { exchange, symbol, timeframe } });
-          show(data?.text ?? data);
-          showChart(data?.chartUrl ?? null);
-          setConf(null);
-          kConfSub.textContent = "—";
-          setGuard(null);
-        } catch (e) {
-          showErr(e);
-        } finally {
-          btnAi.disabled = false;
-        }
-      });
-
-      btnNews.addEventListener("click", async () => {
-        btnNews.disabled = true;
-        try {
-          setTab("out");
-          const data = await api("/api/news");
-          const titles = Array.isArray(data?.headlines) ? data.headlines : [];
-          const ts = data?.ts ? String(data.ts) : "";
-          const score = Number.isFinite(Number(data?.sentiment?.score)) ? Math.round(Number(data.sentiment.score)) : null;
-          const label = data?.sentiment?.label ? String(data.sentiment.label) : "";
-          const header = [`📰 Noticias (${ts})`, score === null ? "" : `📉 Sentimiento: ${score}/100 ${label}`].filter(Boolean);
-          const text = titles.length ? [...header, "", ...titles.map((t) => `- ${t}`)].join("\n") : [...header, "", `Sin noticias`].join("\n");
-          show(text);
-          showChart(null);
-          setConf(null);
-          kConfSub.textContent = "—";
-          setGuard(null);
-        } catch (e) {
-          showErr(e);
-        } finally {
-          btnNews.disabled = false;
-        }
-      });
-
-      btnPositions.addEventListener("click", async () => {
-        btnPositions.disabled = true;
-        try {
-          setTab("positions");
-          await loadPositions();
-        } catch (e) {
-          setTab("out");
-          showErr(e);
-        } finally {
-          btnPositions.disabled = false;
-        }
-      });
-
-      document.querySelector('[data-tab="learn"]').addEventListener("click", async () => {
-        setTab("learn");
-        await refreshPanel();
-        await loadRulesAndWisdom();
-      });
-
-      document.querySelector('[data-tab="gains"]').addEventListener("click", async () => {
-        setTab("gains");
-        await refreshPanel();
-        await loadFuturesSummary();
-      });
-
-      document.querySelector('[data-tab="auto"]').addEventListener("click", async () => {
-        setTab("auto");
-        await refreshPanel();
-        await loadAutoPanel();
-      });
-
-      refreshHealth();
-      refreshPanel();
-      setInterval(refreshHealth, 15000);
-      setInterval(refreshPanel, 30000);
+      // Initial Load
+      monitor();
+      setInterval(monitor, 30000);
+      
     </script>
   </body>
 </html>

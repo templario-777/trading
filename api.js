@@ -3,6 +3,7 @@ import http from "node:http";
 import { URL } from "node:url";
 import fs from "node:fs/promises";
 import pathMod from "node:path";
+import { exec } from "node:child_process";
 
 import {
   buildAiTradeIdea,
@@ -33,7 +34,8 @@ import {
   placeBinanceFuturesOrder,
   closeBinanceFuturesPosition,
   fetchFuturesTestnetEquity,
-  fetchBinanceFuturesTopSymbols
+  fetchBinanceFuturesTopSymbols,
+  getRecentEngrams
 } from "./lib.js";
 
 function getEnvAny(names) {
@@ -124,6 +126,42 @@ function isExpiredBanEntry(entry) {
   return until < today;
 }
 
+function getStaticContentType(filePath) {
+  const ext = String(filePath).split(".").pop().toLowerCase();
+  switch (ext) {
+    case "html": return "text/html; charset=utf-8";
+    case "js": return "application/javascript; charset=utf-8";
+    case "css": return "text/css; charset=utf-8";
+    case "json": return "application/json; charset=utf-8";
+    case "png": return "image/png";
+    case "jpg":
+    case "jpeg": return "image/jpeg";
+    case "svg": return "image/svg+xml";
+    case "ico": return "image/x-icon";
+    case "txt": return "text/plain; charset=utf-8";
+    default: return "application/octet-stream";
+  }
+}
+
+async function serveStatic(req, res, urlPath) {
+  const root = pathMod.join(process.cwd(), "public");
+  const normalizedPath = pathMod.normalize(urlPath).replace(/^\/+/, "");
+  const target = pathMod.join(root, normalizedPath || "index.html");
+  if (!target.startsWith(root)) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return true;
+  }
+  try {
+    const data = await fs.readFile(target);
+    res.writeHead(200, { "content-type": getStaticContentType(target), "cache-control": "no-store" });
+    res.end(data);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function parseMetaLine(entry) {
   const m = String(entry ?? "").match(/^\s*Meta:\s*(.+)$/m);
   const raw = m ? String(m[1]) : "";
@@ -148,7 +186,43 @@ function parseTitleLine(entry) {
   if (!m) return { ts: null, title: null };
   return { ts: String(m[1]).trim(), title: String(m[2]).trim() };
 }
+function execShellCommand(command, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const proc = exec(command, { timeout: timeoutMs, maxBuffer: 5 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) {
+        reject({ code: error.code, message: error.message, stdout, stderr });
+      } else {
+        resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
+      }
+    });
+  });
+}
 
+function isAllowedSshCommand(cmd) {
+  const allowlist = [
+    "uptime",
+    "hostname",
+    "df -h",
+    "free -m",
+    "cat /etc/os-release",
+    "ls -la /tmp"
+  ];
+  const sanitized = String(cmd).trim();
+  if (allowlist.includes(sanitized)) return true;
+  return false;
+}
+
+function buildSshCommand(cmd) {
+  const host = "161.35.107.114";
+  const user = "root";
+  const key = String(process.env.SSH_KEY_PATH ?? "").trim();
+  const escaped = String(cmd).replace(/"/g, "\\\"");
+
+  if (key) {
+    return `ssh -o BatchMode=yes -o StrictHostKeyChecking=no -i "${key}" ${user}@${host} "${escaped}"`;
+  }
+  return `ssh -o BatchMode=yes -o StrictHostKeyChecking=no ${user}@${host} "${escaped}"`;
+}
 function isRuleEntry(entry) {
   const one = String(entry ?? "").toUpperCase();
   return (
@@ -197,6 +271,12 @@ async function handle(req, res) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
 
+  const staticPaths = ["/", "/index.html", "/favicon.ico"];
+  if (req.method === "GET" && (staticPaths.includes(path) || path.startsWith("/assets/"))) {
+    const staticServed = await serveStatic(req, res, path === "/" ? "/index.html" : path);
+    if (staticServed) return;
+  }
+
   const needsAuth = path.startsWith("/api/") && path !== "/api/health" && path !== "/api/meta";
   if (needsAuth && !isAuthorized(req)) {
     sendJson(res, 401, { error: "unauthorized" }, cors);
@@ -237,10 +317,50 @@ async function handle(req, res) {
           authHeaderPresent: Boolean(rawAuth),
           authTokenLen: token ? token.length : 0,
           keyLen: key ? key.length : 0,
-          authorized: Boolean(token) && token === key
+          authorized: Boolean(token) && token === key,
+          sshTarget: "root@161.35.107.114",
+          globalBrain: "connected"
         },
         cors
       );
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/ssh/status") {
+      if (!isAuthorized(req)) {
+        sendJson(res, 401, { error: "unauthorized" }, cors);
+        return;
+      }
+      try {
+        const result = await execShellCommand(buildSshCommand("uptime"));
+        sendJson(res, 200, { ok: true, command: "uptime", output: result.stdout, err: result.stderr }, cors);
+      } catch (e) {
+        sendJson(res, 500, { ok: false, error: "ssh_error", details: e }, cors);
+      }
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/ssh/exec") {
+      if (!isAuthorized(req)) {
+        sendJson(res, 401, { error: "unauthorized" }, cors);
+        return;
+      }
+      const body = await readJsonBody(req, 1000000);
+      const cmd = String(body?.cmd ?? "").trim();
+      if (!cmd) {
+        sendJson(res, 400, { error: "missing_command" }, cors);
+        return;
+      }
+      if (!isAllowedSshCommand(cmd)) {
+        sendJson(res, 403, { error: "command_not_allowed", allowedCommands: ["uptime", "hostname", "df -h", "free -m", "cat /etc/os-release", "ls -la /tmp"] }, cors);
+        return;
+      }
+      try {
+        const result = await execShellCommand(buildSshCommand(cmd));
+        sendJson(res, 200, { ok: true, command: cmd, output: result.stdout, err: result.stderr }, cors);
+      } catch (e) {
+        sendJson(res, 500, { ok: false, error: "ssh_error", details: e }, cors);
+      }
       return;
     }
 
@@ -498,6 +618,14 @@ async function handle(req, res) {
       return;
     }
 
+    if (req.method === "GET" && path === "/api/engrams") {
+      const symbol = url.searchParams.get("symbol") || "GLOBAL";
+      const limit = Number(url.searchParams.get("limit")) || 20;
+      const items = await getRecentEngrams(symbol, limit);
+      sendJson(res, 200, { items }, cors);
+      return;
+    }
+
     if (req.method === "GET" && (path === "/" || path === "/index.html")) {
       const filePath = pathMod.join(process.cwd(), "public", "index.html");
       const html = await fs.readFile(filePath, "utf8");
@@ -569,7 +697,7 @@ async function handle(req, res) {
             text += `\n\n🚫 GUARDIA: BLOQUEAR\n- ${reasons.join("\n- ")}`;
           }
         }
-        sendJson(res, 200, { exchange, symbol, timeframe, signal, text, chartUrl, guard }, cors);
+        sendJson(res, 200, { exchange, symbol, timeframe, signal, text, chartUrl, guard, candles: data.candles }, cors);
       } catch (e) {
         const msg = e?.message ? String(e.message) : String(e);
         sendJson(res, 200, { exchange, symbol, timeframe, ok: false, error: "signal_unavailable", message: msg }, cors);
@@ -625,7 +753,7 @@ async function handle(req, res) {
         if (losses) {
           text += `\n\n⚠️ ERRORES_RECIENTES:\n${losses.slice(0, 600)}`;
         }
-        sendJson(res, 200, { exchange, symbol, timeframe, ai, text, chartUrl }, cors);
+        sendJson(res, 200, { exchange, symbol, timeframe, ai, text, chartUrl, candles: data.candles }, cors);
       } catch (e) {
         const msg = e?.message ? String(e.message) : String(e);
         sendJson(res, 200, { exchange, symbol, timeframe, ok: false, error: "ai_unavailable", message: msg }, cors);

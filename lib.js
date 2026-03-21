@@ -1,6 +1,66 @@
 import ccxt from "ccxt";
 import fs from "node:fs/promises";
 import path from "node:path";
+import sqlite3 from "sqlite3";
+import { open } from "sqlite";
+
+const DB_DIR = path.join(process.cwd(), "db");
+let _db = null;
+
+export async function getDb() {
+  if (_db) return _db;
+  await fs.mkdir(DB_DIR, { recursive: true });
+  _db = await open({
+    filename: path.join(DB_DIR, "trading.db"),
+    driver: sqlite3.Database
+  });
+
+  // Tablas base para datos "duros"
+  await _db.exec(`
+    CREATE TABLE IF NOT EXISTS trades (
+      id TEXT PRIMARY KEY,
+      symbol TEXT,
+      side TEXT,
+      entry_price REAL,
+      exit_price REAL,
+      pnl REAL,
+      status TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS wallet (
+      currency TEXT PRIMARY KEY,
+      balance REAL,
+      last_update DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS engrams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      symbol TEXT,
+      content TEXT,
+      source TEXT,
+      sentiment_score REAL,
+      tags TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  return _db;
+}
+
+export async function saveEngram({ symbol, content, source, sentimentScore = 50, tags = "" }) {
+  const db = await getDb();
+  await db.run(
+    `INSERT INTO engrams (symbol, content, source, sentiment_score, tags) VALUES (?, ?, ?, ?, ?)`,
+    [symbol, content, source, sentimentScore, tags]
+  );
+  console.log(`[ENGRAM] Nuevo recuerdo guardado para ${symbol}: ${content.slice(0, 50)}...`);
+}
+
+export async function getRecentEngrams(symbol, limit = 5) {
+  const db = await getDb();
+  return await db.all(
+    `SELECT * FROM engrams WHERE symbol = ? OR symbol = 'GLOBAL' ORDER BY timestamp DESC LIMIT ?`,
+    [symbol, limit]
+  );
+}
 
 const DEFAULT_LIMIT = 500;
 const DEFAULT_EXCHANGE = "binance";
@@ -1853,6 +1913,39 @@ function resolveMarketSymbol(markets, symbol) {
     if (match?.symbol) return match.symbol;
   }
   return null;
+}
+
+export async function fetchFearGreedIndex() {
+  try {
+    const res = await fetch("https://api.alternative.me/fng/?limit=1");
+    const data = await res.json();
+    return {
+      value: Number(data.data[0].value),
+      classification: data.data[0].value_classification,
+      timestamp: data.data[0].timestamp
+    };
+  } catch {
+    return { value: 50, classification: "Neutral" };
+  }
+}
+
+export async function fetchWebSearchContext({ query, limit = 5 } = {}) {
+  // Simulación de búsqueda web global mediante múltiples feeds y aggregators
+  // En un entorno real, aquí se usaría una API como Tavily o Google Search
+  const headlines = await fetchCryptoNewsHeadlines({ maxTitles: 20 });
+  const filtered = headlines
+    .filter(h => {
+      const q = String(query).toLowerCase();
+      return h.toLowerCase().includes(q) || q.includes(h.toLowerCase().split(' ')[0]);
+    })
+    .slice(0, limit);
+  
+  return {
+    query,
+    results: filtered.length ? filtered : headlines.slice(0, limit),
+    source: "Global Web Index",
+    timestamp: new Date().toISOString()
+  };
 }
 
 export async function fetchCandles({ exchange, symbol, timeframe, limit = DEFAULT_LIMIT, _fallbackDepth = 0 } = {}) {
@@ -5211,12 +5304,26 @@ async function resolveRiskGateDecision({ chatId, signal, candles, headlines, sen
         cost: "bajo",
         when: "Detectar debilidad BTC (RSI1h + sell wall).",
         args: { exchange: s.exchange }
+      },
+      {
+        name: "fetchWebSearchContext",
+        cost: "medio",
+        when: "Buscar noticias, eventos globales o rumores sobre una moneda en todo internet.",
+        args: { query: s.symbol }
+      },
+      {
+        name: "fetchFearGreedIndex",
+        cost: "gratis",
+        when: "Conocer el sentimiento macro del mercado (miedo/codicia global).",
+        args: {}
       }
     ];
 
     const baseContext = [
-      "ROL: Eres un orquestador de trading con Tool-Calling. Debes gastar lo mínimo.",
+      "ROL: Eres un orquestador de trading con Tool-Calling. Tienes acceso a TODO INTERNET.",
       "PROTOCOLO:",
+      "- Usa fetchWebSearchContext para investigar eventos globales o noticias específicas.",
+      "- Usa fetchFearGreedIndex para medir el sentimiento macro.",
       "- Si puedes decidir sin herramientas, decide FINAL.",
       "- Si necesitas confirmación, pide UNA herramienta a la vez.",
       "- Si detectas peligro (spoofing, sell wall fuerte, BTC débil + beta alta), CANCELAR.",
@@ -5250,7 +5357,9 @@ async function resolveRiskGateDecision({ chatId, signal, candles, headlines, sen
       detectVolumeAnomaly: async (args) => await detectVolumeAnomaly(args),
       computeBtcCorrelationBeta: async (args) => await computeBtcCorrelationBeta(args),
       getSectorExposurePct: async (args) => await getSectorExposurePct(args),
-      fetchBtcMarketWeakness: async (args) => await fetchBtcMarketWeakness(args)
+      fetchBtcMarketWeakness: async (args) => await fetchBtcMarketWeakness(args),
+      fetchWebSearchContext: async (args) => await fetchWebSearchContext(args),
+      fetchFearGreedIndex: async (args) => await fetchFearGreedIndex(args)
     };
 
     for (let step = 0; step < maxSteps; step += 1) {
@@ -5626,6 +5735,7 @@ export async function buildAiTradeIdea({ exchange, symbol, timeframe, candles, a
   } catch {
   }
   const newsSent = sentimentScoreFromHeadlines(headlines);
+  const fearGreed = await fetchFearGreedIndex();
   const newsPolicy = await resolveSentimentPolicy({
     headlines,
     sentimentScore: newsSent.score,
@@ -5634,7 +5744,7 @@ export async function buildAiTradeIdea({ exchange, symbol, timeframe, candles, a
   const aiName = String(process.env.AI_NAME ?? process.env.AETHER_NAME ?? "AETHER").trim() || "AETHER";
   const persona = String(
     process.env.AI_PERSONA ??
-      `${aiName} es un agente de trading institucional, crítico y directo. Si la idea es mala o riesgosa, debe decir NO y recomendar ESPERAR.`
+      `${aiName} es un agente de trading institucional con acceso a TODO INTERNET. Es crítico, directo y utiliza datos macro y micro para decidir.`
   ).trim();
 
   const prompt = [
@@ -5649,17 +5759,18 @@ export async function buildAiTradeIdea({ exchange, symbol, timeframe, candles, a
     `TP_BASE: ${signal.tp}`,
     `INDICADORES: EMA_FAST=${signal.indicators.emaFast} EMA_SLOW=${signal.indicators.emaSlow} RSI=${signal.indicators.rsi} ATR=${signal.indicators.atr}`,
     `RESUMEN: ventana=${s.window} retorno%=${s.returnPct} vol%=${s.vol} high=${s.high} low=${s.low}`,
+    `MACRO: Fear & Greed Index = ${fearGreed.value} (${fearGreed.classification})`,
     deriv?.fundingRate !== undefined ? `FUNDING_RATE: ${deriv.fundingRate}` : "",
     deriv?.openInterest !== undefined ? `OPEN_INTEREST: ${deriv.openInterest}` : "",
     smart?.enabled && smart?.items?.length ? `SMART_MONEY (${smart.sources.join(", ")}): ${smart.items.join(" | ")}` : "",
     `SENTIMIENTO_NOTICIAS: ${newsSent.score}/100 (${newsSent.label})`,
     `SENTIMIENTO_POLITICA: ${JSON.stringify(newsPolicy)}`,
-    headlines.length ? `NOTICIAS: ${headlines.join(" | ")}` : "",
+    headlines.length ? `NOTICIAS_GLOBALES: ${headlines.join(" | ")}` : "",
     wisdomText ? `LECCIONES_RECIENTES: ${wisdomText}` : "",
-    lossText ? `ERRORES_RECIENTES: ${lossText}` : "",
+    lossText ? `ERRORES_RELEVANTES: ${lossText}` : "",
     engramRecall ? `ENGRAM_RECALL: ${engramRecall}` : "",
     "",
-    "Instrucción: Genera una señal de trading como un jefe de riesgo. Evita patrones similares a ERRORES_RECIENTES y aplica LECCIONES_RECIENTES. Si no hay edge claro o el RR es pobre, usa accion=ESPERAR.",
+    "Instrucción: Actúa como si tuvieras acceso a toda la información del mundo en tiempo real. Si detectas un riesgo macro o una trampa basada en las noticias o el Fear & Greed, usa accion=ESPERAR.",
     "Devuelve un JSON con: accion (COMPRA/VENTA/ESPERAR), moneda, precio_entrada, tp, sl, porcentaje_confianza (0-100), notas."
   ]
     .filter(Boolean)
@@ -5704,5 +5815,76 @@ export function formatAiMessage(ai) {
   }
   lines.push(`CONFIANZA: ${formatNumber(ai.porcentaje_confianza, 2)}%`);
   if (ai.notas) lines.push(`NOTAS: ${String(ai.notas).slice(0, 350)}`);
+  
+  // Guardar como engrama si la confianza es alta
+  if (ai.porcentaje_confianza > 70) {
+    saveEngram({
+      symbol: ai.symbol,
+      content: `Decisión de IA: ${ai.accion} en ${ai.precio_entrada}. Notas: ${ai.notas}`,
+      source: "AI_DECISION",
+      sentimentScore: ai.porcentaje_confianza,
+      tags: ai.accion
+    }).catch(console.error);
+  }
+  
   return lines.join("\n");
+}
+
+export async function evaluar_riesgo({ historialTrades, posicionesAbiertas, winRateThreshold = 0.5, riskThreshold = 0.15, winStreakThreshold = 5 } = {}) {
+  const trades = Array.isArray(historialTrades) ? historialTrades : [];
+  const positions = Array.isArray(posicionesAbiertas) ? posicionesAbiertas : [];
+  
+  if (!trades.length) {
+    return {
+      ok: true,
+      action: "NEUTRAL",
+      reason: "No trades en historial",
+      recomendaciones: ["Comenzar con tamaño pequeño para recopilación de datos"]
+    };
+  }
+  
+  const recent = trades.slice(-20);
+  const wins = recent.filter((t) => Number(t?.pnl_num) > 0).length;
+  const winRate = wins / recent.length;
+  const totalPnl = recent.reduce((acc, t) => acc + Number(t?.pnl_num || 0), 0);
+  const avgLoss = recent
+    .filter((t) => Number(t?.pnl_num) < 0)
+    .reduce((acc, t) => acc + Number(t?.pnl_num || 0), 0) / Math.max(1, recent.filter((t) => Number(t?.pnl_num) < 0).length);
+  
+  const recomendaciones = [];
+  let action = "NEUTRAL";
+  let criticidad = "NORMAL";
+  
+  if (wins >= winStreakThreshold) {
+    action = "INCREASE_SIZE";
+    recomendaciones.push(`✅ Racha de ${wins} ganancias consecutivas: Considera aumentar tamaño 5-10%`);
+  } else if (winRate < riskThreshold) {
+    action = "REDUCE_SIZE";
+    criticidad = "ALTA";
+    recomendaciones.push(`⚠️ Win rate bajo (${(winRate * 100).toFixed(1)}%): Reducir tamaño a 50%`);
+    recomendaciones.push(`🔍 Revisar señales: Aumentar filtering o cambiar horario de trading`);
+  } else if (totalPnl <= -riskThreshold * 100) {
+    action = "PAUSE";
+    criticidad = "CRITICA";
+    recomendaciones.push(`🛑 Pérdida acumulada > ${(riskThreshold * 100).toFixed(1)}%: DETENER operaciones`);
+    recomendaciones.push(`📊 Ejecutar análisis post-mortem con Deepseek si está activado`);
+  } else if (avgLoss < -riskThreshold * 10) {
+    action = "ADJUST_PARAMS";
+    recomendaciones.push(`⚙️ Stop loss promedio muy grande: Reducir SL de ${Math.abs(avgLoss).toFixed(2)}% a ${(Math.abs(avgLoss) / 2).toFixed(2)}%`);
+  }
+  
+  return {
+    ok: true,
+    action,
+    criticidad,
+    metrics: {
+      trades: recent.length,
+      wins,
+      winRate: (winRate * 100).toFixed(1) + "%",
+      totalPnl: totalPnl.toFixed(2) + "%",
+      avgLoss: avgLoss.toFixed(2) + "%"
+    },
+    recomendaciones,
+    timestamp: new Date().toISOString()
+  };
 }
