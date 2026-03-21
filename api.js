@@ -232,10 +232,12 @@ function isRuleEntry(entry) {
 }
 
 function buildCorsHeaders(req) {
-  const allowed = parseListEnv("TRADING_BOT_API_ALLOWED_ORIGINS");
   const origin = String(req.headers.origin ?? "").trim();
-  if (!origin || !allowed.length) return {};
-  if (!allowed.includes(origin)) return {};
+  if (!origin) return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "authorization,content-type"
+  };
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "GET,POST,OPTIONS",

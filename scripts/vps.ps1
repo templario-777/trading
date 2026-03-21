@@ -1,7 +1,7 @@
 param(
   [ValidateSet("ssh", "deploy", "status", "restart", "logs")]
   [string]$Action = "status",
-  [string]$Host = "161.35.107.114",
+  [string]$RemoteHost = "161.35.107.114",
   [string]$User = "root",
   [string]$Key = "$HOME\\.ssh\\id_ed25519",
   [string]$Service = "trading-bot-api"
@@ -16,13 +16,13 @@ $sshOpts = @(
 )
 
 function Invoke-Remote([string]$cmd) {
-  & ssh @sshOpts "$User@$Host" $cmd
+  & ssh @sshOpts "$User@$RemoteHost" $cmd
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 switch ($Action) {
   "ssh" {
-    & ssh @sshOpts "$User@$Host"
+    & ssh @sshOpts "$User@$RemoteHost"
     exit $LASTEXITCODE
   }
   "status" {

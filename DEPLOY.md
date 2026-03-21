@@ -31,11 +31,11 @@ rsync -av --delete \
 Alternativa (PowerShell en Windows, sin rsync):
 
 ```powershell
-$SERVER_IP="161.35.107.114"
+$SERVER_IP = "161.35.107.114"
 cd $HOME\Music\Trading_bot
-$items = Get-ChildItem -Force | Where-Object { $_.Name -notin @('node_modules','.env','trading_notes','memoria_aether.json') }
+$items = Get-ChildItem -Force | Where-Object { $_.Name -notin @('node_modules','.env','trading_notes','memoria_aether.json','.git') }
 Compress-Archive -Path $items.FullName -DestinationPath trading_bot.zip -Force
-scp .\trading_bot.zip root@$SERVER_IP:/opt/trading_bot.zip
+scp .\trading_bot.zip "root@${SERVER_IP}:/opt/trading_bot.zip"
 ssh root@$SERVER_IP "mkdir -p /opt/trading_bot && apt-get update -y && apt-get install -y unzip && unzip -o /opt/trading_bot.zip -d /opt/trading_bot"
 ```
 

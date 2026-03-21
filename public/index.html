@@ -9,7 +9,7 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- TradingView Lightweight Charts -->
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script>
       tailwind.config = {
         darkMode: 'class',
@@ -546,48 +546,57 @@
       let candleSeries = null;
 
       function initChart() {
+        if (!window.LightweightCharts) {
+          console.error("LightweightCharts not loaded");
+          return;
+        }
         if (tvChart) {
           chartContainer.innerHTML = "";
           tvChart = null;
         }
-        tvChart = LightweightCharts.createChart(chartContainer, {
-          width: chartContainer.clientWidth,
-          height: 350,
-          layout: {
-            backgroundColor: 'transparent',
-            textColor: '#9db0d9',
-          },
-          grid: {
-            vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
-            horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
-          },
-          crosshair: {
-            mode: LightweightCharts.CrosshairMode.Normal,
-          },
-          priceScale: {
-            borderColor: 'rgba(255, 255, 255, 0.1)',
-          },
-          timeScale: {
-            borderColor: 'rgba(255, 255, 255, 0.1)',
-            timeVisible: true,
-          },
-        });
-        candleSeries = tvChart.addCandlestickSeries({
-          upColor: '#5cffb0',
-          downColor: '#ff6b6b',
-          borderDownColor: '#ff6b6b',
-          borderUpColor: '#5cffb0',
-          wickDownColor: '#ff6b6b',
-          wickUpColor: '#5cffb0',
-        });
+        try {
+          tvChart = window.LightweightCharts.createChart(chartContainer, {
+            width: chartContainer.clientWidth,
+            height: 350,
+            layout: {
+              background: { type: 'solid', color: 'transparent' },
+              textColor: '#9db0d9',
+            },
+            grid: {
+              vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+              horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+            },
+            crosshair: {
+              mode: window.LightweightCharts.CrosshairMode.Normal,
+            },
+            priceScale: {
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+            },
+            timeScale: {
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              timeVisible: true,
+            },
+          });
+          candleSeries = tvChart.addCandlestickSeries({
+             upColor: '#5cffb0',
+             downColor: '#ff6b6b',
+             borderDownColor: '#ff6b6b',
+             borderUpColor: '#5cffb0',
+             wickDownColor: '#ff6b6b',
+             wickUpColor: '#5cffb0',
+           });
 
-        // Responsive resize
-        const resizeObserver = new ResizeObserver(entries => {
-          if (entries.length === 0 || !tvChart) return;
-          const { width, height } = entries[0].contentRect;
-          tvChart.applyOptions({ width, height });
-        });
-        resizeObserver.observe(chartContainer);
+           // Responsive resize
+           const resizeObserver = new ResizeObserver(entries => {
+             if (entries.length === 0 || !tvChart) return;
+             const { width, height } = entries[0].contentRect;
+             tvChart.applyOptions({ width, height });
+           });
+           resizeObserver.observe(chartContainer);
+         } catch (e) {
+          console.error("Chart init error:", e);
+          log("⚠️ Error inicializando gráfico: " + e.message, 'error');
+        }
       }
 
       function renderCandles(candles) {
@@ -652,11 +661,12 @@
 
       // API Core
       async function api(path, opts = {}) {
-        let token = apiKeyInput.value.trim() || storage.get("bot_api_key") || "";
-        if (!token && location.hostname === '127.0.0.1') token = 'AETHER_2026';
+        let token = apiKeyInput.value.trim() || storage.get("bot_api_key") || "AETHER_2026";
         
-        if (apiKeyInput.value !== token) apiKeyInput.value = token;
-        if (token) storage.set("bot_api_key", token);
+        if (apiKeyInput.value !== token && token !== "AETHER_2026") {
+          apiKeyInput.value = token;
+        }
+        if (token && token !== "AETHER_2026") storage.set("bot_api_key", token);
 
         try {
           const res = await fetch(path, {
