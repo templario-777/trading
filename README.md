@@ -20,7 +20,7 @@ Este repo incluye una API HTTP simple para consumir desde tu web (por ejemplo un
 
 Variables en `.env`:
 
-- `TRADING_BOT_API_KEY`: token para `Authorization: Bearer ...`
+- `TRADING_BOT_API_KEY`: token para `Authorization: Bearer ...` (por defecto usa `AETHER_2026`)
 - `TRADING_BOT_API_HOST` / `TRADING_BOT_API_PORT`
 - `TRADING_BOT_API_ALLOWED_ORIGINS`: lista separada por comas (solo si llamas desde el navegador)
 
@@ -30,17 +30,32 @@ Arranque:
 npm run api
 ```
 
-Endpoints:
+Endpoints principales:
 
-- `GET /health`
-- `POST /api/signal` body: `{ "exchange": "...", "symbol": "BTC/USDT", "timeframe": "15m" | "all" }`
-- `GET /api/paper/positions`
-- `POST /api/paper/open`
-- `POST /api/paper/close`
-- `POST /api/paper/partial`
-- `GET /api/paper/trades?limit=100`
+- `GET /health` (Estado del servidor)
+- `GET /api/meta` (Metadatos y estado de autorización)
+- `GET /api/news` (Noticias de mercado y sentimiento IA)
+- `POST /api/signal` (Análisis técnico y señales)
+- `POST /api/ai` (Análisis avanzado con DeepSeek IA)
+- `GET /api/paper/positions` (Gestión de trades simulados)
+- `GET /api/paper/trades?limit=100` (Historial de resultados)
 
 Recomendación para Vercel: no expongas `TRADING_BOT_API_KEY` al navegador; úsalo en un endpoint server-side (route handler) que haga proxy hacia esta API.
+
+### UI Dashboard (Panel Visual)
+
+Este repo incluye una UI profesional en `public/index.html` con las siguientes características:
+
+- **Vista Dual de Análisis**: Noticias de mercado en tiempo real junto con gráficos dinámicos de TradingView.
+- **Sentimiento del Mercado**: Análisis automático de titulares usando IA para determinar la política de trading (Neutral, Crisis, etc.).
+- **Monitoreo de VPS**: Estado de conectividad, Uptime y servicios en tiempo real.
+- **Gestión de Paper Trading**: Abre, cierra y monitorea posiciones simuladas desde el panel.
+- **Responsive Design**: Optimizado para móviles y escritorio con scroll independiente en secciones de análisis.
+
+Para desplegar la UI:
+1. Sube los archivos a tu servidor (ver [DEPLOY.md](DEPLOY.md)).
+2. Accede vía web a tu servidor en el puerto configurado (ej. `http://tu-ip:8787`).
+3. Usa la API Key configurada para desbloquear las funciones.
 
 ### UI en Cloudflare Pages (visual)
 
