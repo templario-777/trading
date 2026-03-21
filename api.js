@@ -15,9 +15,12 @@ import {
   formatAiMessage,
   formatSignalMessage,
   getDefaultTimeframes,
+  generarAutocritica,
+  learnFromTradeWithDeepseek,
   listPaperPositions,
   loadTradeHistory,
   openPaperPosition,
+  readWisdomEntries,
   recordPaperPartialClose
 } from "./lib.js";
 
@@ -164,6 +167,7 @@ async function handle(req, res) {
       let token = getBearerToken(req);
       token = token ? String(token).trim() : "";
       if (token.startsWith("\"") && token.endsWith("\"") && token.length >= 2) token = token.slice(1, -1);
+      const wisdom = await readWisdomEntries({ last: 1 }).catch(() => ({ total: 0 }));
       sendJson(
         res,
         200,
@@ -172,6 +176,7 @@ async function handle(req, res) {
           ts: new Date().toISOString(),
           deepseekKey,
           apiKeyEnabled,
+          wisdomTotal: Number(wisdom?.total) || 0,
           authHeaderPresent: Boolean(rawAuth),
           authTokenLen: token ? token.length : 0,
           keyLen: key ? key.length : 0,
@@ -393,7 +398,27 @@ async function handle(req, res) {
         sendJson(res, 404, { error: "not_found" }, cors);
         return;
       }
-      sendJson(res, 200, { trade: closed }, cors);
+      const apiKey = getEnvAny(["DEEPSEEK_KEY", "DEEPSEEK_API_KEY"]);
+      let learning = null;
+      let critique = null;
+      if (apiKey) {
+        learning = await learnFromTradeWithDeepseek({
+          apiKey,
+          trade: closed,
+          signal: null,
+          context: { source: "api", kind: "paper_close" }
+        }).catch((e) => ({ ok: false, error: e?.message ?? String(e) }));
+        const rNum = Number(closed?.r);
+        const shouldCritique = String(reason) === "SL" || String(reason) === "TIMEOUT" || (Number.isFinite(rNum) && rNum < 0);
+        if (shouldCritique) {
+          critique = await generarAutocritica({
+            apiKey,
+            tradeFallido: closed,
+            contexto: { source: "api", kind: "paper_close" }
+          }).catch((e) => ({ ok: false, error: e?.message ?? String(e) }));
+        }
+      }
+      sendJson(res, 200, { trade: closed, learning, critique }, cors);
       return;
     }
 
