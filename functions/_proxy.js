@@ -45,6 +45,11 @@ async function proxy({ request, env, method, path, body, queryString }) {
 
   const contentType = upstreamRes.headers.get("content-type") ?? "application/json; charset=utf-8";
   const text = await upstreamRes.text();
+  
+  if (!upstreamRes.ok && !contentType.includes("json")) {
+    return json({ error: "upstream_error", status: upstreamRes.status, message: text.slice(0, 200) }, upstreamRes.status);
+  }
+
   return new Response(text, {
     status: upstreamRes.status,
     headers: {

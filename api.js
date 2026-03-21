@@ -213,8 +213,8 @@ function isAllowedSshCommand(cmd) {
 }
 
 function buildSshCommand(cmd) {
-  const host = "161.35.107.114";
-  const user = "root";
+  const host = String(process.env.SSH_HOST ?? "161.35.107.114").trim();
+  const user = String(process.env.SSH_USER ?? "root").trim();
   const key = String(process.env.SSH_KEY_PATH ?? "").trim();
   const escaped = String(cmd).replace(/"/g, "\\\"");
 
@@ -311,6 +311,8 @@ async function handle(req, res) {
       token = token ? String(token).trim() : "";
       if (token.startsWith("\"") && token.endsWith("\"") && token.length >= 2) token = token.slice(1, -1);
       const wisdom = await readWisdomEntries({ last: 1 }).catch(() => ({ total: 0 }));
+      const sshHost = String(process.env.SSH_HOST ?? "161.35.107.114").trim();
+      const sshUser = String(process.env.SSH_USER ?? "root").trim();
       sendJson(
         res,
         200,
@@ -324,7 +326,7 @@ async function handle(req, res) {
           authTokenLen: token ? token.length : 0,
           keyLen: key ? key.length : 0,
           authorized: Boolean(token) && token === key,
-          sshTarget: "root@161.35.107.114",
+          sshTarget: `${sshUser}@${sshHost}`,
           globalBrain: "connected"
         },
         cors
@@ -640,11 +642,16 @@ async function handle(req, res) {
     }
 
     if (req.method === "GET" && path === "/api/news") {
-      const maxTitles = Number.isFinite(Number(url.searchParams.get("maxTitles")))
-        ? Number(url.searchParams.get("maxTitles"))
-        : 10;
-      const data = await fetchNewsSnapshot({ maxTitles });
-      sendJson(res, 200, data, cors);
+      try {
+        const maxTitles = Number.isFinite(Number(url.searchParams.get("maxTitles")))
+          ? Number(url.searchParams.get("maxTitles"))
+          : 10;
+        const data = await fetchNewsSnapshot({ maxTitles });
+        sendJson(res, 200, data, cors);
+      } catch (e) {
+        const msg = e?.message ?? String(e);
+        sendJson(res, 200, { ok: false, error: "news_unavailable", message: msg }, cors);
+      }
       return;
     }
 
@@ -981,6 +988,15 @@ async function handle(req, res) {
 }
 
 async function main() {
+  process.on("unhandledRejection", (e) => {
+    const msg = e?.stack ?? e?.message ?? String(e);
+    process.stderr.write(`[UNHANDLED_REJECTION] ${msg}\n`);
+  });
+  process.on("uncaughtException", (e) => {
+    const msg = e?.stack ?? e?.message ?? String(e);
+    process.stderr.write(`[UNCAUGHT_EXCEPTION] ${msg}\n`);
+  });
+
   const portRaw = Number(getEnvAny(["TRADING_BOT_API_PORT"]) ?? 8787);
   const port = Number.isFinite(portRaw) ? Math.max(1, Math.min(65535, Math.floor(portRaw))) : 8787;
   const host = String(getEnvAny(["TRADING_BOT_API_HOST"]) ?? "0.0.0.0").trim() || "0.0.0.0";

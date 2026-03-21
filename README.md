@@ -19,7 +19,7 @@ Ver [DEPLOY.md](DEPLOY.md).
 Este repo incluye una API HTTP simple para consumir desde tu web (por ejemplo un dashboard en Vercel).
 
 Variables en `.env`:
-
+![alt text]({6FB83468-DF21-43A6-B70E-D456B144B8D2}.png)
 - `TRADING_BOT_API_KEY`: token para `Authorization: Bearer ...` (por defecto usa `AETHER_2026`)
 - `TRADING_BOT_API_HOST` / `TRADING_BOT_API_PORT`
 - `TRADING_BOT_API_ALLOWED_ORIGINS`: lista separada por comas (solo si llamas desde el navegador)

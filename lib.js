@@ -4408,13 +4408,14 @@ export async function consultDeepseek({ apiKey, promptText, model = "deepseek-ch
     temperature
   };
 
-  const res = await fetch("https://api.deepseek.com/chat/completions", {
+  const res = await fetchWithTimeout("https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${key}`
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    timeoutMs: 30000
   });
 
   const bodyText = await res.text();
@@ -4469,12 +4470,13 @@ function parseEnvList(raw) {
     .filter(Boolean);
 }
 
-async function fetchWithTimeout(url, { timeoutMs } = {}) {
+async function fetchWithTimeout(url, opts = {}) {
+  const { timeoutMs, ...fetchOpts } = opts;
   const ms = Number.isFinite(Number(timeoutMs)) ? Math.max(500, Math.floor(Number(timeoutMs))) : 5000;
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), ms);
   try {
-    return await fetch(url, { method: "GET", signal: controller.signal });
+    return await fetch(url, { ...fetchOpts, signal: controller.signal });
   } finally {
     clearTimeout(t);
   }
@@ -5604,12 +5606,11 @@ export async function fetchCryptoNewsHeadlines({ maxTitles = 10 } = {}) {
       ];
 
   const perFeed = Math.max(2, Math.ceil(Number(maxTitles) / baseUrls.length));
+  const results = await Promise.allSettled(baseUrls.map(u => fetchRss(u, perFeed)));
   const all = [];
-  for (const u of baseUrls) {
-    try {
-      const t = await fetchRss(u, perFeed);
-      all.push(...t);
-    } catch {
+  for (const r of results) {
+    if (r.status === "fulfilled" && Array.isArray(r.value)) {
+      all.push(...r.value);
     }
   }
   const uniq = [];

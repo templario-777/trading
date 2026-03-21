@@ -58,6 +58,12 @@ async function proxyJson({ req, res, method, path, body, query }) {
 
   const contentType = String(upstreamRes.headers.get("content-type") ?? "application/json");
   const text = await upstreamRes.text();
+  
+  if (!upstreamRes.ok && !contentType.includes("json")) {
+    json(res, upstreamRes.status, { error: "upstream_error", status: upstreamRes.status, message: text.slice(0, 200) });
+    return;
+  }
+
   res.statusCode = upstreamRes.status;
   res.setHeader("content-type", contentType);
   res.setHeader("cache-control", "no-store");

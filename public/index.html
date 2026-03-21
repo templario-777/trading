@@ -117,7 +117,7 @@
             <span id="brainVal" class="font-medium text-accent italic">GLOBAL</span>
           </div>
           <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 text-[10px]">
-            <span class="text-slate-400 font-mono">161.35.107.114</span>
+            <span id="sshTargetVal" class="text-slate-400 font-mono">161.35.107.114</span>
             <span id="sshVal" class="text-ok">CONNECTED</span>
           </div>
           <div id="vpsStats" class="space-y-1 mt-2 hidden">
@@ -716,6 +716,10 @@
       }
 
       function showNews(res) {
+        if (!res || res.ok === false) {
+          log(res?.message || res?.error || "Error al cargar noticias", 'error');
+          return;
+        }
         out.classList.add('hidden');
         newsContainer.classList.remove('hidden');
         newsContainer.innerHTML = "";
@@ -1147,6 +1151,10 @@
           if (m.globalBrain === "connected") {
             $("brainVal").textContent = "GLOBAL";
             $("brainVal").className = "font-medium text-accent italic";
+          }
+          
+          if (m.sshTarget) {
+            $("sshTargetVal").textContent = m.sshTarget;
           }
 
           // SSH & VPS Status
