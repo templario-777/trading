@@ -375,7 +375,8 @@
           const m = await api("/api/meta");
           bAi.classList.toggle("ok", Boolean(m?.deepseekKey));
           bAi.classList.toggle("bad", !m?.deepseekKey);
-          bAi.textContent = `IA: ${m?.deepseekKey ? "OK" : "FALTA"}`;
+          const mem = Number.isFinite(Number(m?.wisdomTotal)) ? Number(m.wisdomTotal) : 0;
+          bAi.textContent = `IA: ${m?.deepseekKey ? "OK" : "FALTA"} | Mem: ${mem}`;
 
           bAuth.classList.remove("bad");
           bAuth.classList.add(m?.apiKeyEnabled ? "ok" : "");
@@ -391,6 +392,13 @@
       }
 
       async function loadPositions() {
+        try {
+          const sync = await api("/api/paper/sync", { method: "POST", body: {} });
+          const c = Number(sync?.closed) || 0;
+          const p = Number(sync?.partial) || 0;
+          if (c || p) out.textContent = `Paper Sync: cerradas=${c} parciales=${p}`;
+        } catch {
+        }
         const data = await api("/api/paper/positions");
         const items = Array.isArray(data?.items) ? data.items : [];
         const empty = $("posEmpty");

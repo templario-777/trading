@@ -10,6 +10,7 @@ import {
   buildSignalChartUrl,
   closePaperPosition,
   evaluarGuardiaDeEntrada,
+  fetchLastPrice,
   fetchNewsSnapshot,
   fetchCandles,
   formatAiMessage,
@@ -21,7 +22,8 @@ import {
   loadTradeHistory,
   openPaperPosition,
   readWisdomEntries,
-  recordPaperPartialClose
+  recordPaperPartialClose,
+  updatePaperPosition
 } from "./lib.js";
 
 function getEnvAny(names) {
@@ -325,6 +327,75 @@ async function handle(req, res) {
     if (req.method === "GET" && path === "/api/paper/positions") {
       const items = await listPaperPositions();
       sendJson(res, 200, { items }, cors);
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/paper/sync") {
+      const body = (await readJsonBody(req)) ?? {};
+      const closeTp1PctRaw = Number(body.closeTp1Pct ?? process.env.PAPER_TP1_CLOSE_PCT ?? 50);
+      const closeTp1Pct = Number.isFinite(closeTp1PctRaw) ? Math.max(1, Math.min(99, closeTp1PctRaw)) : 50;
+      const positions = await listPaperPositions();
+      const items = Array.isArray(positions) ? positions : [];
+      const results = [];
+      let closed = 0;
+      let partial = 0;
+      for (const p of items) {
+        try {
+          const id = String(p?.id ?? "").trim();
+          const exchange = String(p?.exchange ?? "").trim();
+          const symbol = String(p?.symbol ?? "").trim();
+          const timeframe = String(p?.timeframe ?? "").trim();
+          const side = String(p?.side ?? "").trim().toUpperCase();
+          const sl = Number(p?.sl);
+          const tp1 = Number(p?.tp1);
+          const tp2 = Number(p?.tp2 ?? p?.tp);
+          if (!id || !exchange || !symbol || !timeframe || (side !== "LONG" && side !== "SHORT")) {
+            results.push({ id, ok: false, error: "invalid_position" });
+            continue;
+          }
+          const pxData = await fetchLastPrice({ exchange, symbol });
+          const price = Number(pxData?.price ?? pxData?.last ?? pxData);
+          if (!Number.isFinite(price)) {
+            results.push({ id, ok: false, error: "price_unavailable" });
+            continue;
+          }
+          const isLong = side === "LONG";
+          const tp1Hit = Boolean(p?.tp1Hit);
+
+          if (Number.isFinite(tp1) && Number.isFinite(tp2) && !tp1Hit) {
+            const hitTp1 = isLong ? price >= tp1 : price <= tp1;
+            if (hitTp1) {
+              const trade = await recordPaperPartialClose({ id, exitPrice: price, reason: "TP1", closePct: closeTp1Pct });
+              const prevPct = Number(p?.remainingPct);
+              const prev = Number.isFinite(prevPct) ? Math.max(1, Math.min(100, prevPct)) : 100;
+              const next = Math.max(1, Math.round(prev * (1 - closeTp1Pct / 100)));
+              await updatePaperPosition({ id, patch: { tp1Hit: true, remainingPct: next } });
+              partial += 1;
+              results.push({ id, ok: true, action: "partial_tp1", price, tradeId: trade?.id ?? null });
+              continue;
+            }
+          }
+
+          const hitSl = Number.isFinite(sl) ? (isLong ? price <= sl : price >= sl) : false;
+          const hitTp = Number.isFinite(tp2) ? (isLong ? price >= tp2 : price <= tp2) : false;
+          if (hitSl) {
+            const t = await closePaperPosition({ id, exitPrice: price, reason: "SL" });
+            closed += 1;
+            results.push({ id, ok: true, action: "close_sl", price, tradeId: t?.id ?? null });
+            continue;
+          }
+          if (hitTp) {
+            const t = await closePaperPosition({ id, exitPrice: price, reason: "TP" });
+            closed += 1;
+            results.push({ id, ok: true, action: "close_tp", price, tradeId: t?.id ?? null });
+            continue;
+          }
+          results.push({ id, ok: true, action: "none", price });
+        } catch (e) {
+          results.push({ id: String(p?.id ?? "").trim(), ok: false, error: e?.message ?? String(e) });
+        }
+      }
+      sendJson(res, 200, { ok: true, evaluated: items.length, closed, partial, results }, cors);
       return;
     }
 

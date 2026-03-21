@@ -3284,6 +3284,22 @@ export async function closePaperPosition({ id, exitPrice, reason }) {
       }
     });
   }
+  const apiKey = String(process.env.DEEPSEEK_KEY ?? process.env.DEEPSEEK_API_KEY ?? "").trim();
+  if (apiKey) {
+    await learnFromTradeWithDeepseek({
+      apiKey,
+      trade: closed,
+      signal: null,
+      context: { source: "paper", kind: "close", reason: String(reason ?? "") }
+    }).catch(() => {});
+    if (shouldRemember) {
+      await generarAutocritica({
+        apiKey,
+        tradeFallido: closed,
+        contexto: { source: "paper", kind: "close", reason: String(reason ?? "") }
+      }).catch(() => {});
+    }
+  }
   return closed;
 }
 
@@ -3343,6 +3359,15 @@ export async function recordPaperPartialClose({ id, exitPrice, reason, closePct 
     mem.strategyStats[k] = { ...perKey, [strat]: sNext };
   }
   await saveMemory(mem);
+  const apiKey = String(process.env.DEEPSEEK_KEY ?? process.env.DEEPSEEK_API_KEY ?? "").trim();
+  if (apiKey) {
+    await learnFromTradeWithDeepseek({
+      apiKey,
+      trade,
+      signal: null,
+      context: { source: "paper", kind: "partial", reason: String(reason ?? ""), closePct: pct }
+    }).catch(() => {});
+  }
   return trade;
 }
 
