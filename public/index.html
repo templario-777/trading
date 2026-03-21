@@ -118,7 +118,7 @@
           </div>
           <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 text-[10px]">
             <span id="sshTargetVal" class="text-slate-400 font-mono">161.35.107.114</span>
-            <span id="sshVal" class="text-ok">CONNECTED</span>
+            <span id="sshVal" class="text-slate-500">WAITING</span>
           </div>
           <div id="vpsStats" class="space-y-1 mt-2 hidden">
             <div class="flex items-center justify-between p-1.5 rounded-md bg-white/5 text-[9px]">
@@ -1135,7 +1135,7 @@
             throw new Error("health_not_ok");
           }
         } catch (e) {
-          $("healthVal").textContent = "OFF";
+          $("healthVal").textContent = "OFFLINE";
           $("healthVal").className = "font-medium text-danger";
           $("statusDot").className = "w-2 h-2 rounded-full bg-danger animate-pulse";
           console.warn("Monitor Health Error:", e.message);
@@ -1191,11 +1191,8 @@
           }
         } catch (e) {
           // If meta fails (network or other error), only update Auth status
-          if (e.status === 401) {
-            $("authVal").textContent = "UNAUTHORIZED";
-          } else {
-            $("authVal").textContent = "OFFLINE";
-          }
+          const errStatus = e.status || "ERR";
+          $("authVal").textContent = `OFFLINE (${errStatus})`;
           $("authVal").className = "font-medium text-danger";
           console.warn("Monitor Meta Error:", e.message);
         }
