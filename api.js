@@ -646,6 +646,14 @@ async function handle(req, res) {
       return;
     }
 
+    if (req.method === "GET" && path === "/api/wisdom") {
+      const limit = Number(url.searchParams.get("limit") ?? "20");
+      const out = await readWisdomEntries({ last: limit });
+      const all = await readWisdomEntriesAll();
+      sendJson(res, 200, { items: out.items || [], total: all.items?.length || 0 }, cors);
+      return;
+    }
+
     if (req.method === "GET" && path === "/api/news") {
       try {
         const maxTitles = Number.isFinite(Number(url.searchParams.get("maxTitles")))
