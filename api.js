@@ -410,7 +410,15 @@ async function handle(req, res) {
         const meta = parseMetaLine(text);
         const tl = parseTitleLine(text);
         const until = meta.until ?? parseBanUntilDate(text) ?? null;
-        const excerpt = String(text).replace(/\s+/g, " ").trim().slice(0, 260);
+        
+        // Limpiar el excerpt para que no incluya la cabecera Meta o el título
+        let cleanExcerpt = String(text)
+          .replace(/^\s*##\s*\[[^\]]+\]\s*.+$/m, "") // Quitar título
+          .replace(/^\s*Meta:\s*.+$/m, "")           // Quitar línea Meta
+          .replace(/\s+/g, " ")                      // Normalizar espacios
+          .trim();
+        
+        const excerpt = cleanExcerpt.slice(0, 260);
         items.push({
           ts: tl.ts,
           title: tl.title,
