@@ -11,6 +11,7 @@ import {
   closePaperPosition,
   evaluarGuardiaDeEntrada,
   fetchLastPrice,
+  fetchBinanceFuturesSummary,
   fetchNewsSnapshot,
   fetchCandles,
   formatAiMessage,
@@ -315,6 +316,22 @@ async function handle(req, res) {
         },
         cors
       );
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/futures/summary") {
+      try {
+        const data = await fetchBinanceFuturesSummary();
+        sendJson(res, 200, data, cors);
+      } catch (e) {
+        const msg = e?.message ? String(e.message) : String(e);
+        const m = msg.match(/^missing_env:([A-Z0-9_]+)$/);
+        if (m) {
+          sendJson(res, 400, { error: "missing_env", env: m[1] }, cors);
+        } else {
+          sendJson(res, 200, { ok: false, error: "futures_unavailable", message: msg }, cors);
+        }
+      }
       return;
     }
 

@@ -352,6 +352,7 @@
           <div class="tab active" data-tab="out">Salida</div>
           <div class="tab" data-tab="positions">Paper</div>
           <div class="tab" data-tab="learn">Aprendizaje</div>
+          <div class="tab" data-tab="gains">Ganancias</div>
         </div>
         <div id="panelOut">
           <div class="kpis">
@@ -425,6 +426,38 @@
             </div>
           </div>
         </div>
+        <div id="panelGains" style="display: none">
+          <div class="stack">
+            <div class="kpis">
+              <div class="kpi">
+                <div class="kpiLabel">Wallet</div>
+                <div class="kpiVal" id="gWallet">—</div>
+                <div class="kpiSub" id="gAvail">Disponible: —</div>
+              </div>
+              <div class="kpi">
+                <div class="kpiLabel">Unrealized PnL</div>
+                <div class="kpiVal" id="gUnreal">—</div>
+                <div class="kpiSub" id="gPos">Posiciones abiertas: —</div>
+              </div>
+            </div>
+            <div class="kpis">
+              <div class="kpi">
+                <div class="kpiLabel">Realized PnL 24h</div>
+                <div class="kpiVal" id="gR1">—</div>
+              </div>
+              <div class="kpi">
+                <div class="kpiLabel">Realized PnL 7d / 30d</div>
+                <div class="kpiVal" id="gR7">—</div>
+                <div class="kpiSub" id="gR30">—</div>
+              </div>
+            </div>
+            <div class="muted" id="gErr"></div>
+            <details>
+              <summary>Raw</summary>
+              <pre id="gRaw" class="muted"></pre>
+            </details>
+          </div>
+        </div>
       </section>
     </main>
     <script>
@@ -452,6 +485,15 @@
       const wisdomEmpty = $("wisdomEmpty");
       const wisdomList = $("wisdomList");
       const cfgKv = $("cfgKv");
+      const gWallet = $("gWallet");
+      const gAvail = $("gAvail");
+      const gUnreal = $("gUnreal");
+      const gPos = $("gPos");
+      const gR1 = $("gR1");
+      const gR7 = $("gR7");
+      const gR30 = $("gR30");
+      const gErr = $("gErr");
+      const gRaw = $("gRaw");
       let panelCache = null;
 
       function setTab(name) {
@@ -461,6 +503,7 @@
         $("panelOut").style.display = name === "out" ? "" : "none";
         $("panelPositions").style.display = name === "positions" ? "" : "none";
         $("panelLearn").style.display = name === "learn" ? "" : "none";
+        $("panelGains").style.display = name === "gains" ? "" : "none";
       }
 
       document.querySelectorAll(".tab").forEach((t) => {
@@ -530,6 +573,12 @@
           throw e;
         }
         return data;
+      }
+
+      function isUnauthorized(err) {
+        const e = err && typeof err === "object" ? err : null;
+        const data = e && "data" in e ? e.data : null;
+        return Boolean(data && typeof data === "object" && data.error === "unauthorized");
       }
 
       async function refreshHealth() {
@@ -609,16 +658,26 @@
             cfgKv.appendChild(kk);
             cfgKv.appendChild(vv);
           }
-        } catch {
+        } catch (e) {
           bAi.classList.remove("ok");
           bAi.classList.add("bad");
           bAi.textContent = "IA: ?";
           bAuth.classList.remove("ok");
           bAuth.classList.add("bad");
-          bAuth.textContent = "API: ?";
+          bAuth.textContent = isUnauthorized(e) ? "API: No autorizado" : "API: ?";
           bRules.classList.remove("ok");
           bRules.classList.add("bad");
           bRules.textContent = "Reglas: ?";
+          cfgKv.innerHTML = "";
+          if (isUnauthorized(e)) {
+            const kk = document.createElement("div");
+            kk.className = "k";
+            kk.textContent = "Auth";
+            const vv = document.createElement("div");
+            vv.textContent = "Pega tu TRADING_BOT_API_KEY arriba.";
+            cfgKv.appendChild(kk);
+            cfgKv.appendChild(vv);
+          }
         }
       }
 
@@ -697,7 +756,9 @@
             }
           }
         } catch (e) {
-          rulesEmpty.textContent = "Error cargando reglas.";
+          rulesEmpty.textContent = isUnauthorized(e)
+            ? "No autorizado. Pega tu TRADING_BOT_API_KEY arriba."
+            : "Error cargando reglas.";
         }
         try {
           const w = await api("/api/wisdom?limit=18");
@@ -718,8 +779,53 @@
               wisdomList.appendChild(d);
             }
           }
-        } catch {
-          wisdomEmpty.textContent = "Error cargando lecciones.";
+        } catch (e) {
+          wisdomEmpty.textContent = isUnauthorized(e)
+            ? "No autorizado. Pega tu TRADING_BOT_API_KEY arriba."
+            : "Error cargando lecciones.";
+        }
+      }
+
+      function fmtMoney(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return "—";
+        const sign = n > 0 ? "+" : "";
+        return `${sign}${n.toFixed(2)}`;
+      }
+
+      async function loadFuturesSummary() {
+        gErr.textContent = "";
+        gRaw.textContent = "";
+        gWallet.textContent = "—";
+        gAvail.textContent = "Disponible: —";
+        gUnreal.textContent = "—";
+        gPos.textContent = "Posiciones abiertas: —";
+        gR1.textContent = "—";
+        gR7.textContent = "—";
+        gR30.textContent = "—";
+        try {
+          const s = await api("/api/futures/summary");
+          const a = s?.account ?? {};
+          const r = s?.realized ?? {};
+          const p = s?.positions ?? {};
+          gWallet.textContent = fmtMoney(a.walletBalance);
+          gAvail.textContent = `Disponible: ${fmtMoney(a.availableBalance)}`;
+          gUnreal.textContent = fmtMoney(a.unrealizedProfit ?? p.unrealizedProfit);
+          gPos.textContent = `Posiciones abiertas: ${Number(p.openCount) || 0}`;
+          gR1.textContent = fmtMoney(r.d1);
+          gR7.textContent = `${fmtMoney(r.d7)}`;
+          gR30.textContent = `30d: ${fmtMoney(r.d30)}`;
+          gRaw.textContent = JSON.stringify(s, null, 2);
+        } catch (e) {
+          const data = e && typeof e === "object" && "data" in e ? e.data : null;
+          if (data && typeof data === "object" && data.error === "missing_env" && data.env) {
+            gErr.textContent =
+              `Falta configurar ${data.env} en el servidor (.env). Usa un API key de Binance con permisos SOLO LECTURA y restringido por IP.`;
+          } else if (isUnauthorized(e)) {
+            gErr.textContent = "No autorizado. Pega tu TRADING_BOT_API_KEY arriba.";
+          } else {
+            gErr.textContent = "Error cargando ganancias.";
+          }
         }
       }
 
@@ -806,6 +912,12 @@
         setTab("learn");
         await refreshPanel();
         await loadRulesAndWisdom();
+      });
+
+      document.querySelector('[data-tab="gains"]').addEventListener("click", async () => {
+        setTab("gains");
+        await refreshPanel();
+        await loadFuturesSummary();
       });
 
       refreshHealth();

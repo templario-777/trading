@@ -1952,6 +1952,97 @@ export async function fetchLastPrice({ exchange, symbol, _fallbackDepth = 0 } = 
   throw lastErr ?? new Error("fetchLastPrice falló");
 }
 
+const binanceFuturesCache = new Map();
+
+function getBinanceFutures() {
+  const key = String(process.env.BINANCE_FUTURES_KEY ?? "").trim();
+  const secret = String(process.env.BINANCE_FUTURES_SECRET ?? "").trim();
+  if (!key) throw new Error("missing_env:BINANCE_FUTURES_KEY");
+  if (!secret) throw new Error("missing_env:BINANCE_FUTURES_SECRET");
+
+  const cacheKey = `${key.length}:${secret.length}`;
+  if (binanceFuturesCache.has(cacheKey)) return binanceFuturesCache.get(cacheKey);
+
+  const ex = new ccxt.binance({
+    apiKey: key,
+    secret,
+    enableRateLimit: true,
+    timeout: 20000,
+    options: { defaultType: "future" }
+  });
+  if (typeof ex.setSandboxMode === "function") {
+    const sandbox = !["0", "false", "off", "no"].includes(String(process.env.BINANCE_FUTURES_TESTNET ?? "0").trim().toLowerCase());
+    if (sandbox) ex.setSandboxMode(true);
+  }
+  binanceFuturesCache.set(cacheKey, ex);
+  return ex;
+}
+
+function sumIncome(items) {
+  const arr = Array.isArray(items) ? items : [];
+  let sum = 0;
+  for (const it of arr) {
+    const v = Number(it?.income);
+    if (Number.isFinite(v)) sum += v;
+  }
+  return sum;
+}
+
+export async function fetchBinanceFuturesSummary() {
+  const ex = getBinanceFutures();
+  const now = Date.now();
+  const d1 = 24 * 3600_000;
+  const d7 = 7 * d1;
+  const d30 = 30 * d1;
+
+  const [accountRaw, income30Raw, positionsRaw] = await Promise.all([
+    ex.fapiPrivateGetAccount(),
+    ex.fapiPrivateGetIncome({ incomeType: "REALIZED_PNL", startTime: now - d30, endTime: now, limit: 1000 }),
+    ex.fapiPrivateGetPositionRisk().catch(() => [])
+  ]);
+
+  const account = accountRaw && typeof accountRaw === "object" ? accountRaw : {};
+  const walletBalance = Number(account.totalWalletBalance);
+  const marginBalance = Number(account.totalMarginBalance);
+  const availableBalance = Number(account.availableBalance);
+  const unrealizedProfit = Number(account.totalUnrealizedProfit);
+
+  const income30 = Array.isArray(income30Raw) ? income30Raw : [];
+  const cut7 = now - d7;
+  const cut1 = now - d1;
+  const income7 = income30.filter((x) => Number(x?.time) >= cut7);
+  const income1 = income30.filter((x) => Number(x?.time) >= cut1);
+
+  const pos = Array.isArray(positionsRaw) ? positionsRaw : [];
+  const open = pos.filter((p) => Math.abs(Number(p?.positionAmt ?? 0)) > 0);
+  const openCount = open.length;
+  const unrealizedFromPositions = open.reduce((acc, p) => {
+    const u = Number(p?.unRealizedProfit ?? p?.unrealizedProfit ?? 0);
+    return acc + (Number.isFinite(u) ? u : 0);
+  }, 0);
+
+  return {
+    ok: true,
+    ts: new Date().toISOString(),
+    currency: "USDT",
+    account: {
+      walletBalance: Number.isFinite(walletBalance) ? walletBalance : null,
+      marginBalance: Number.isFinite(marginBalance) ? marginBalance : null,
+      availableBalance: Number.isFinite(availableBalance) ? availableBalance : null,
+      unrealizedProfit: Number.isFinite(unrealizedProfit) ? unrealizedProfit : null
+    },
+    realized: {
+      d1: sumIncome(income1),
+      d7: sumIncome(income7),
+      d30: sumIncome(income30)
+    },
+    positions: {
+      openCount,
+      unrealizedProfit: Number.isFinite(unrealizedFromPositions) ? unrealizedFromPositions : null
+    }
+  };
+}
+
 export async function listSpotSymbols({ exchange, quote = "USDT", maxSymbols = 200 } = {}) {
   const ex = getExchange(exchange);
   const maxAttempts = Number.isFinite(Number(process.env.FETCH_RETRY_ATTEMPTS))
