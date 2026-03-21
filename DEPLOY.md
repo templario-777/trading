@@ -39,6 +39,18 @@ scp .\trading_bot.zip root@$SERVER_IP:/opt/trading_bot.zip
 ssh root@$SERVER_IP "mkdir -p /opt/trading_bot && apt-get update -y && apt-get install -y unzip && unzip -o /opt/trading_bot.zip -d /opt/trading_bot"
 ```
 
+## Atajo PowerShell (SSH estable)
+
+En Windows puedes usar el helper:
+
+```powershell
+cd $HOME\Music\Trading_bot
+.\scripts\vps.ps1 -Action status
+.\scripts\vps.ps1 -Action ssh
+.\scripts\vps.ps1 -Action deploy
+.\scripts\vps.ps1 -Action logs -Service trading-bot-api
+```
+
 3. En el servidor:
 
 ```bash
