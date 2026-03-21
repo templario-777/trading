@@ -277,7 +277,10 @@ async function handle(req, res) {
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
   
-  process.stdout.write(`[REQ] ${req.method} ${path}\n`);
+  console.log(`[REQ] ${req.method} ${path}`);
+  if (path.startsWith("/api/")) {
+    console.log(`[HEADERS] ${JSON.stringify(req.headers)}`);
+  }
 
   if (req.method === "OPTIONS") {
     res.writeHead(204, { ...cors });
