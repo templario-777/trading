@@ -5817,16 +5817,14 @@ export function formatAiMessage(ai) {
   lines.push(`CONFIANZA: ${formatNumber(ai.porcentaje_confianza, 2)}%`);
   if (ai.notas) lines.push(`NOTAS: ${String(ai.notas).slice(0, 350)}`);
   
-  // Guardar como engrama si la confianza es alta
-  if (ai.porcentaje_confianza > 70) {
-    saveEngram({
-      symbol: ai.symbol,
-      content: `Decisión de IA: ${ai.accion} en ${ai.precio_entrada}. Notas: ${ai.notas}`,
-      source: "AI_DECISION",
-      sentimentScore: ai.porcentaje_confianza,
-      tags: ai.accion
-    }).catch(console.error);
-  }
+  // Guardar como engrama (Memoria)
+  saveEngram({
+    symbol: ai.symbol,
+    content: `Análisis IA: ${ai.accion} en ${ai.precio_entrada}. Notas: ${ai.notas}`,
+    source: "AI_DECISION",
+    sentimentScore: ai.porcentaje_confianza,
+    tags: ai.accion
+  }).catch(console.error);
   
   return lines.join("\n");
 }

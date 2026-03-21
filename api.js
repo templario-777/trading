@@ -701,6 +701,16 @@ async function handle(req, res) {
         const signal = await buildSignal(data);
         const chartUrl = buildSignalChartUrl({ signal, candles: data.candles });
         const guard = await evaluarGuardiaDeEntrada({ chatId: null, signal, candles: data.candles });
+        
+        // Guardar como engrama (Memoria)
+        saveEngram({
+          symbol: symbol,
+          content: `Señal ${signal.side} detectada. Confianza: ${Math.round(signal.model.confidence * 100)}%.`,
+          source: "SIGNAL",
+          sentimentScore: Math.round(signal.model.confidence * 100),
+          tags: signal.side
+        }).catch(console.error);
+
         let text = formatSignalMessage(signal);
         const sScore = Number(guard?.metrics?.sentimentScore);
         const sLabel = guard?.metrics?.sentimentLabel ? String(guard.metrics.sentimentLabel) : "";
