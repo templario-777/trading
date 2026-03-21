@@ -235,8 +235,8 @@
                 </div>
               </div>
 
-              <div class="glass rounded-2xl p-6 min-h-[400px] flex flex-col">
-                <div class="flex items-center justify-between mb-4">
+              <div class="glass rounded-2xl p-6 min-h-[400px] flex flex-col overflow-hidden">
+                <div class="flex items-center justify-between mb-4 shrink-0">
                   <h3 class="text-sm font-bold flex items-center gap-2">
                     <i data-lucide="terminal" class="w-4 h-4 text-slate-400"></i>
                     Salida de Análisis
@@ -246,16 +246,20 @@
                     <span class="text-[10px] text-slate-400 uppercase">Live Console</span>
                   </div>
                 </div>
-                <div id="out" class="flex-1 font-mono text-xs text-slate-300 bg-black/20 rounded-xl p-4 overflow-auto custom-scrollbar border border-white/5 whitespace-pre-wrap">
-                  Esperando parámetros... Pulsa 'Señal' o 'IA' para comenzar.
+                <!-- Box with internal scroll for news/log -->
+                <div class="flex-1 flex flex-col overflow-y-auto custom-scrollbar pr-2" style="max-height: 500px;">
+                  <div id="out" class="font-mono text-xs text-slate-300 bg-black/20 rounded-xl p-4 border border-white/5 whitespace-pre-wrap">
+                    Esperando parámetros... Pulsa 'Señal' o 'IA' para comenzar.
+                  </div>
+                  <div id="newsContainer" class="hidden space-y-3 p-1">
+                    <!-- News will be injected here -->
+                  </div>
                 </div>
-                <div id="newsContainer" class="flex-1 hidden space-y-3 overflow-auto custom-scrollbar p-1">
-                  <!-- News will be injected here -->
-                </div>
-                <div id="chartContainer" class="mt-4 rounded-xl overflow-hidden hidden bg-black/40 border border-white/5" style="height: 350px;">
+                <!-- Chart container below -->
+                <div id="chartContainer" class="mt-4 rounded-xl overflow-hidden hidden bg-black/40 border border-white/5 shrink-0" style="height: 350px; min-height: 300px;">
                    <!-- Chart will be injected here -->
                 </div>
-                <div id="staticChartContainer" class="mt-4 rounded-xl overflow-hidden hidden">
+                <div id="staticChartContainer" class="mt-4 rounded-xl overflow-hidden hidden shrink-0">
                    <img id="chartImg" class="w-full h-auto rounded-xl" alt="Análisis gráfico" />
                 </div>
               </div>
@@ -709,6 +713,14 @@
         newsContainer.classList.remove('hidden');
         newsContainer.innerHTML = "";
         
+        // Fix for [object Object] bug
+        let policyText = "Neutral";
+        if (res.sentiment?.policy) {
+          policyText = typeof res.sentiment.policy === 'object' 
+            ? (res.sentiment.policy.text || JSON.stringify(res.sentiment.policy))
+            : res.sentiment.policy;
+        }
+
         // Sentiment Header
         const header = document.createElement('div');
         header.className = "glass p-4 rounded-xl border-l-4 " + (res.sentiment?.score >= 50 ? 'border-ok bg-ok/5' : 'border-danger bg-danger/5');
@@ -719,7 +731,7 @@
           </div>
           <p class="text-[11px] text-slate-300 mt-1 font-medium">${res.sentiment?.label}</p>
           <div class="mt-3 p-2 bg-black/20 rounded-lg text-[10px] text-slate-400 italic">
-            Política: ${res.sentiment?.policy || 'Neutral'}
+            Política: ${policyText}
           </div>
         `;
         newsContainer.appendChild(header);
