@@ -2862,7 +2862,7 @@ export async function evaluarGuardiaDeEntrada({ chatId, signal, candles, headlin
   const wisdomGuardEnabled = !["0", "false", "off", "no"].includes(
     String(process.env.WISDOM_GUARD_ENABLED ?? "1").trim().toLowerCase()
   );
-  if (wisdomGuardEnabled && reasons.length === 0) {
+  if (wisdomGuardEnabled) {
     try {
       const w = await readWisdomEntries({ last: 20 });
       const blk = evaluarBloqueoPorSabiduria({ signal: s, wisdomEntries: w.entries });
