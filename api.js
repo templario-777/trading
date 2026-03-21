@@ -218,10 +218,11 @@ function buildSshCommand(cmd) {
   const key = String(process.env.SSH_KEY_PATH ?? "").trim();
   const escaped = String(cmd).replace(/"/g, "\\\"");
 
+  const opts = "-o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10";
   if (key) {
-    return `ssh -o BatchMode=yes -o StrictHostKeyChecking=no -i "${key}" ${user}@${host} "${escaped}"`;
+    return `ssh ${opts} -i "${key}" ${user}@${host} "${escaped}"`;
   }
-  return `ssh -o BatchMode=yes -o StrictHostKeyChecking=no ${user}@${host} "${escaped}"`;
+  return `ssh ${opts} ${user}@${host} "${escaped}"`;
 }
 function isRuleEntry(entry) {
   const one = String(entry ?? "").toUpperCase();
@@ -263,7 +264,11 @@ function isAuthorized(req) {
   token = String(token).trim();
   if (token.startsWith("\"") && token.endsWith("\"") && token.length >= 2) token = token.slice(1, -1);
   
-  return token === key;
+  const authorized = token === key;
+  if (!authorized) {
+    process.stderr.write(`[AUTH_FAILED] Token provided: "${token}" (len:${token.length}) | Expected key: "${key}" (len:${key.length})\n`);
+  }
+  return authorized;
 }
 
 async function handle(req, res) {
