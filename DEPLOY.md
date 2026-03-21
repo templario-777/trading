@@ -65,6 +65,7 @@ Edita `/opt/trading_bot/.env` y completa como mínimo:
 - `TELEGRAM_BOT_TOKEN` o `TOKEN_TELEGRAM`
 - `TELEGRAM_ADMIN_CHAT_ID` o `TELEGRAM_NOTIFY_CHAT_ID` (opcional, pero recomendado para notificaciones)
 - `DEEPSEEK_API_KEY` o `DEEPSEEK_KEY` (si usas el módulo de IA)
+- `TRADING_BOT_API_KEY` (Llave para el panel web, por defecto el panel usa `AETHER_2026`)
 
 4. Verifica que carga:
 

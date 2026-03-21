@@ -249,6 +249,9 @@
                 <div id="out" class="flex-1 font-mono text-xs text-slate-300 bg-black/20 rounded-xl p-4 overflow-auto custom-scrollbar border border-white/5 whitespace-pre-wrap">
                   Esperando parámetros... Pulsa 'Señal' o 'IA' para comenzar.
                 </div>
+                <div id="newsContainer" class="flex-1 hidden space-y-3 overflow-auto custom-scrollbar p-1">
+                  <!-- News will be injected here -->
+                </div>
                 <div id="chartContainer" class="mt-4 rounded-xl overflow-hidden hidden bg-black/40 border border-white/5" style="height: 350px;">
                    <!-- Chart will be injected here -->
                 </div>
@@ -695,8 +698,52 @@
 
       // Display Helpers
       function log(msg, type = 'info') {
+        out.classList.remove('hidden');
+        newsContainer.classList.add('hidden');
         out.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2);
         out.scrollTop = 0;
+      }
+
+      function showNews(res) {
+        out.classList.add('hidden');
+        newsContainer.classList.remove('hidden');
+        newsContainer.innerHTML = "";
+        
+        // Sentiment Header
+        const header = document.createElement('div');
+        header.className = "glass p-4 rounded-xl border-l-4 " + (res.sentiment?.score >= 50 ? 'border-ok bg-ok/5' : 'border-danger bg-danger/5');
+        header.innerHTML = `
+          <div class="flex justify-between items-center">
+            <h4 class="text-xs font-bold uppercase tracking-wider">Sentimiento del Mercado</h4>
+            <span class="text-lg font-bold">${res.sentiment?.score}/100</span>
+          </div>
+          <p class="text-[11px] text-slate-300 mt-1 font-medium">${res.sentiment?.label}</p>
+          <div class="mt-3 p-2 bg-black/20 rounded-lg text-[10px] text-slate-400 italic">
+            Política: ${res.sentiment?.policy || 'Neutral'}
+          </div>
+        `;
+        newsContainer.appendChild(header);
+
+        // Headlines List
+        const list = document.createElement('div');
+        list.className = "space-y-2 mt-4";
+        if (res.headlines && res.headlines.length) {
+          res.headlines.forEach(h => {
+            const item = document.createElement('div');
+            item.className = "p-3 bg-white/5 rounded-xl border border-white/5 text-[11px] text-slate-300 hover:bg-white/10 transition-all";
+            item.innerHTML = `
+              <div class="flex gap-3">
+                <i data-lucide="newspaper" class="w-3 h-3 text-accent shrink-0 mt-0.5"></i>
+                <span>${h}</span>
+              </div>
+            `;
+            list.appendChild(item);
+          });
+        } else {
+          list.innerHTML = `<p class="text-xs text-slate-500 italic p-4 text-center">No hay titulares recientes.</p>`;
+        }
+        newsContainer.appendChild(list);
+        lucide.createIcons();
       }
 
       function showErr(e) {
@@ -755,10 +802,30 @@
       };
 
       $("btnNews").onclick = async () => {
-        log("📰 Obteniendo últimas noticias...");
+        log("📰 Obteniendo últimas noticias y sentimiento...");
         try {
           const res = await api("/api/news");
-          log(res);
+          
+          // Render news nicely in the dedicated container
+          showNews(res);
+
+          // Also trigger a signal scan to show the chart alongside the news
+          const exchange = $("exchange").value;
+          const symbol = $("symbol").value;
+          const timeframe = $("timeframe").value;
+          
+          api("/api/signal", {
+            method: "POST",
+            body: { exchange, symbol, timeframe }
+          }).then(sigRes => {
+            if (sigRes.candles) {
+              renderCandles(sigRes.candles);
+            } else if (sigRes.chartUrl) {
+              showStaticChart(sigRes.chartUrl);
+            }
+            updateKPIs(sigRes);
+          }).catch(e => console.warn("No se pudo cargar el gráfico con las noticias", e));
+
         } catch (e) { showErr(e); }
       };
 
@@ -1026,15 +1093,32 @@
 
       // Background Monitoring
       async function monitor() {
+        // Health check (Public)
         try {
-          const h = await api("/api/health");
-          $("healthVal").textContent = "OK";
-          $("healthVal").className = "font-medium text-ok";
-          $("statusDot").className = "w-2 h-2 rounded-full bg-ok animate-pulse";
-          
+          const h = await fetch("/api/health").then(r => r.json());
+          if (h && h.ok) {
+            $("healthVal").textContent = "OK";
+            $("healthVal").className = "font-medium text-ok";
+            $("statusDot").className = "w-2 h-2 rounded-full bg-ok animate-pulse";
+          } else {
+            throw new Error("health_not_ok");
+          }
+        } catch (e) {
+          $("healthVal").textContent = "OFF";
+          $("healthVal").className = "font-medium text-danger";
+          $("statusDot").className = "w-2 h-2 rounded-full bg-danger animate-pulse";
+        }
+
+        // Meta/Auth check (Needs Auth)
+        try {
           const m = await api("/api/meta");
           $("authVal").textContent = m.authorized ? "OK" : "ERROR";
           $("authVal").className = `font-medium ${m.authorized ? 'text-ok' : 'text-danger'}`;
+          
+          if (m.globalBrain === "connected") {
+            $("brainVal").textContent = "GLOBAL";
+            $("brainVal").className = "font-medium text-accent italic";
+          }
 
           // SSH & VPS Status
           try {
@@ -1043,16 +1127,23 @@
               $("sshVal").textContent = "CONNECTED";
               $("sshVal").className = "text-ok";
               $("vpsStats").classList.remove('hidden');
-              $("vpsUptime").textContent = ssh.output.split(',')[0].replace('up', '').trim();
+              // Format uptime
+              let uptimeStr = ssh.output || "—";
+              if (uptimeStr.includes("up")) {
+                uptimeStr = uptimeStr.split("up")[1].split(",")[0].trim();
+              }
+              $("vpsUptime").textContent = uptimeStr;
+            } else {
+              $("sshVal").textContent = "ERROR";
+              $("sshVal").className = "text-warn";
             }
           } catch {
             $("sshVal").textContent = "DISCONNECTED";
             $("sshVal").className = "text-danger";
           }
-        } catch {
-          $("healthVal").textContent = "OFF";
-          $("healthVal").className = "font-medium text-danger";
-          $("statusDot").className = "w-2 h-2 rounded-full bg-danger animate-pulse";
+        } catch (e) {
+          $("authVal").textContent = "ERROR";
+          $("authVal").className = "font-medium text-danger";
         }
       }
 
