@@ -274,14 +274,16 @@ function isAuthorized(req) {
 
 async function handle(req, res) {
   const cors = buildCorsHeaders(req);
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const path = url.pathname;
+  
+  process.stdout.write(`[REQ] ${req.method} ${path}\n`);
+
   if (req.method === "OPTIONS") {
     res.writeHead(204, { ...cors });
     res.end();
     return;
   }
-
-  const url = new URL(req.url ?? "/", "http://localhost");
-  const path = url.pathname;
 
   const staticPaths = ["/", "/index.html", "/favicon.ico"];
   if (req.method === "GET" && (staticPaths.includes(path) || path.startsWith("/assets/"))) {
