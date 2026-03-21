@@ -9,11 +9,13 @@
         color-scheme: dark;
         --bg: #0b1220;
         --panel: #0f1b33;
+        --panel2: rgba(15, 27, 51, 0.72);
         --text: #e9eefc;
         --muted: #9db0d9;
         --accent: #5fa8ff;
         --danger: #ff6b6b;
         --ok: #5cffb0;
+        --warn: #ffd166;
         --border: rgba(255, 255, 255, 0.08);
       }
       body {
@@ -58,6 +60,10 @@
         border-radius: 14px;
         padding: 14px;
         backdrop-filter: blur(6px);
+      }
+      .stack {
+        display: grid;
+        gap: 12px;
       }
       .row {
         display: grid;
@@ -139,6 +145,11 @@
         background: rgba(255, 107, 107, 0.10);
         color: #ffd1d1;
       }
+      .badge.warn {
+        border-color: rgba(255, 209, 102, 0.7);
+        background: rgba(255, 209, 102, 0.10);
+        color: #ffe9b8;
+      }
       pre {
         margin: 0;
         white-space: pre-wrap;
@@ -188,6 +199,106 @@
         color: var(--muted);
         font-weight: 600;
       }
+      .kpis {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      @media (max-width: 520px) {
+        .kpis {
+          grid-template-columns: 1fr;
+        }
+      }
+      .kpi {
+        background: var(--panel2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      .kpiLabel {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.2px;
+      }
+      .kpiVal {
+        font-size: 18px;
+        font-weight: 700;
+        margin-top: 6px;
+      }
+      .kpiSub {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 6px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .meter {
+        margin-top: 10px;
+        height: 10px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .meter > div {
+        height: 100%;
+        width: 0%;
+        background: rgba(95, 168, 255, 0.8);
+      }
+      .kv {
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: 8px 12px;
+        font-size: 12px;
+        align-items: baseline;
+      }
+      .kv .k {
+        color: var(--muted);
+      }
+      .pill {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.04);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.22);
+      }
+      .dot.ok {
+        background: rgba(92, 255, 176, 0.85);
+      }
+      .dot.bad {
+        background: rgba(255, 107, 107, 0.85);
+      }
+      .dot.warn {
+        background: rgba(255, 209, 102, 0.9);
+      }
+      details {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--panel2);
+        padding: 10px 12px;
+      }
+      details > summary {
+        cursor: pointer;
+        font-size: 12px;
+        color: var(--text);
+        font-weight: 650;
+      }
+      details pre {
+        margin-top: 10px;
+        color: #d9e4ff;
+      }
     </style>
   </head>
   <body>
@@ -231,6 +342,7 @@
               <div class="badge" id="bHealth">Health: ...</div>
               <div class="badge" id="bAi">IA: ...</div>
               <div class="badge" id="bAuth">API: ...</div>
+              <div class="badge" id="bRules">Reglas: ...</div>
             </div>
           </div>
         </div>
@@ -239,16 +351,35 @@
         <div class="tabs">
           <div class="tab active" data-tab="out">Salida</div>
           <div class="tab" data-tab="positions">Paper</div>
+          <div class="tab" data-tab="learn">Aprendizaje</div>
         </div>
         <div id="panelOut">
+          <div class="kpis">
+            <div class="kpi">
+              <div class="kpiLabel">Confianza</div>
+              <div class="kpiVal" id="kConfVal">—</div>
+              <div class="kpiSub" id="kConfSub">Sin datos todavía.</div>
+              <div class="meter"><div id="kConfBar"></div></div>
+            </div>
+            <div class="kpi">
+              <div class="kpiLabel">Guardia</div>
+              <div class="kpiVal" id="kGuardVal">—</div>
+              <div class="kpiSub" id="kGuardReasons"></div>
+            </div>
+          </div>
           <div class="title">Respuesta</div>
           <pre id="out" class="muted">Listo.</pre>
           <div class="title" style="margin-top: 12px">Gráfico</div>
           <img id="chartImg" alt="chart" style="width: 100%; border-radius: 12px; display: none" />
         </div>
         <div id="panelPositions" style="display: none">
-          <div class="title">Paper positions</div>
-          <div class="muted" id="posEmpty">Sin posiciones.</div>
+          <div class="stack">
+            <div>
+              <div class="title">Paper positions</div>
+              <div class="muted" id="posEmpty">Sin posiciones.</div>
+            </div>
+            <div class="muted" id="posSyncInfo"></div>
+          </div>
           <table id="posTable" style="display: none">
             <thead>
               <tr>
@@ -265,6 +396,35 @@
             <tbody id="posBody"></tbody>
           </table>
         </div>
+        <div id="panelLearn" style="display: none">
+          <div class="stack">
+            <div>
+              <div class="title">Reglas activas</div>
+              <div class="muted" id="rulesEmpty">Cargando...</div>
+              <table id="rulesTable" style="display: none">
+                <thead>
+                  <tr>
+                    <th>Until</th>
+                    <th>Symbol</th>
+                    <th>TF</th>
+                    <th>Título</th>
+                    <th>Extracto</th>
+                  </tr>
+                </thead>
+                <tbody id="rulesBody"></tbody>
+              </table>
+            </div>
+            <div>
+              <div class="title">Últimas lecciones</div>
+              <div class="muted" id="wisdomEmpty">Cargando...</div>
+              <div id="wisdomList" class="stack"></div>
+            </div>
+            <div>
+              <div class="title">Config</div>
+              <div class="kv" id="cfgKv"></div>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
     <script>
@@ -274,11 +434,25 @@
       const bHealth = $("bHealth");
       const bAi = $("bAi");
       const bAuth = $("bAuth");
+      const bRules = $("bRules");
       const apiKeyInput = $("apiKey");
       const btnSignal = $("btnSignal");
       const btnAi = $("btnAi");
       const btnNews = $("btnNews");
       const btnPositions = $("btnPositions");
+      const kConfVal = $("kConfVal");
+      const kConfSub = $("kConfSub");
+      const kConfBar = $("kConfBar");
+      const kGuardVal = $("kGuardVal");
+      const kGuardReasons = $("kGuardReasons");
+      const posSyncInfo = $("posSyncInfo");
+      const rulesEmpty = $("rulesEmpty");
+      const rulesTable = $("rulesTable");
+      const rulesBody = $("rulesBody");
+      const wisdomEmpty = $("wisdomEmpty");
+      const wisdomList = $("wisdomList");
+      const cfgKv = $("cfgKv");
+      let panelCache = null;
 
       function setTab(name) {
         document.querySelectorAll(".tab").forEach((t) => {
@@ -286,6 +460,7 @@
         });
         $("panelOut").style.display = name === "out" ? "" : "none";
         $("panelPositions").style.display = name === "positions" ? "" : "none";
+        $("panelLearn").style.display = name === "learn" ? "" : "none";
       }
 
       document.querySelectorAll(".tab").forEach((t) => {
@@ -370,9 +545,37 @@
         }
       }
 
-      async function refreshMeta() {
+      function setConf(conf) {
+        const c = Number(conf);
+        const ok = Number.isFinite(c) ? Math.max(0, Math.min(1, c)) : null;
+        const pct = ok === null ? null : Math.round(ok * 100);
+        kConfVal.textContent = pct === null ? "—" : `${pct}%`;
+        kConfBar.style.width = pct === null ? "0%" : `${pct}%`;
+        if (pct === null) {
+          kConfBar.style.background = "rgba(95, 168, 255, 0.8)";
+          return;
+        }
+        kConfBar.style.background =
+          pct >= 75 ? "rgba(92, 255, 176, 0.85)" : pct >= 55 ? "rgba(255, 209, 102, 0.9)" : "rgba(255, 107, 107, 0.85)";
+      }
+
+      function setGuard(guard) {
+        const g = guard && typeof guard === "object" ? guard : null;
+        const enabled = Boolean(g?.enabled);
+        const allow = g?.allow === true;
+        const txt = enabled ? (allow ? "OK" : "BLOQUEAR") : "OFF";
+        kGuardVal.textContent = txt;
+        const reasons = Array.isArray(g?.reasons) ? g.reasons : [];
+        kGuardReasons.textContent = reasons.length ? reasons.join("\n") : "";
+      }
+
+      async function refreshPanel() {
         try {
-          const m = await api("/api/meta");
+          const p = await api("/api/panel");
+          panelCache = p && typeof p === "object" ? p : null;
+          const m = panelCache?.meta ?? null;
+          const cfg = panelCache?.config ?? null;
+
           bAi.classList.toggle("ok", Boolean(m?.deepseekKey));
           bAi.classList.toggle("bad", !m?.deepseekKey);
           const mem = Number.isFinite(Number(m?.wisdomTotal)) ? Number(m.wisdomTotal) : 0;
@@ -381,6 +584,31 @@
           bAuth.classList.remove("bad");
           bAuth.classList.add(m?.apiKeyEnabled ? "ok" : "");
           bAuth.textContent = `API: ${m?.apiKeyEnabled ? "Auth ON" : "Auth OFF"}`;
+
+          const rules = Number.isFinite(Number(m?.activeRules)) ? Number(m.activeRules) : 0;
+          bRules.classList.toggle("bad", rules >= 1);
+          bRules.classList.toggle("ok", rules === 0);
+          bRules.textContent = `Reglas: ${rules}`;
+
+          cfgKv.innerHTML = "";
+          const entries = [
+            ["Wisdom Guard", cfg?.wisdomGuardEnabled ? "ON" : "OFF"],
+            ["ENGRAM", cfg?.engramEnabled ? "ON" : "OFF"],
+            ["Guard min confidence", Number.isFinite(Number(cfg?.guardMinConfidence)) ? String(cfg.guardMinConfidence) : "N/A"],
+            ["Ban enabled", cfg?.learnBanEnabled ? "ON" : "OFF"],
+            ["Ban losses", Number.isFinite(Number(cfg?.learnBanLosses)) ? String(cfg.learnBanLosses) : "N/A"],
+            ["Ban hours", Number.isFinite(Number(cfg?.learnBanHours)) ? String(cfg.learnBanHours) : "N/A"],
+            ["TP1 close %", Number.isFinite(Number(cfg?.paperTp1ClosePct)) ? String(cfg.paperTp1ClosePct) : "N/A"]
+          ];
+          for (const [k, v] of entries) {
+            const kk = document.createElement("div");
+            kk.className = "k";
+            kk.textContent = k;
+            const vv = document.createElement("div");
+            vv.textContent = v;
+            cfgKv.appendChild(kk);
+            cfgKv.appendChild(vv);
+          }
         } catch {
           bAi.classList.remove("ok");
           bAi.classList.add("bad");
@@ -388,6 +616,9 @@
           bAuth.classList.remove("ok");
           bAuth.classList.add("bad");
           bAuth.textContent = "API: ?";
+          bRules.classList.remove("ok");
+          bRules.classList.add("bad");
+          bRules.textContent = "Reglas: ?";
         }
       }
 
@@ -396,8 +627,9 @@
           const sync = await api("/api/paper/sync", { method: "POST", body: {} });
           const c = Number(sync?.closed) || 0;
           const p = Number(sync?.partial) || 0;
-          if (c || p) out.textContent = `Paper Sync: cerradas=${c} parciales=${p}`;
+          posSyncInfo.textContent = `Paper Sync: evaluadas=${Number(sync?.evaluated) || 0} | cerradas=${c} | parciales=${p}`;
         } catch {
+          posSyncInfo.textContent = "";
         }
         const data = await api("/api/paper/positions");
         const items = Array.isArray(data?.items) ? data.items : [];
@@ -433,6 +665,64 @@
         }
       }
 
+      async function loadRulesAndWisdom() {
+        rulesEmpty.textContent = "Cargando...";
+        rulesTable.style.display = "none";
+        rulesBody.innerHTML = "";
+        wisdomEmpty.textContent = "Cargando...";
+        wisdomList.innerHTML = "";
+        try {
+          const rules = await api("/api/rules/active");
+          const items = Array.isArray(rules?.items) ? rules.items : [];
+          if (!items.length) {
+            rulesEmpty.textContent = "Sin reglas activas.";
+          } else {
+            rulesEmpty.textContent = "";
+            rulesTable.style.display = "";
+            for (const r of items.slice(0, 60)) {
+              const tr = document.createElement("tr");
+              const cells = [
+                r?.until ?? "",
+                r?.symbol ?? "",
+                r?.timeframe ?? "",
+                r?.title ?? "",
+                r?.excerpt ?? ""
+              ];
+              for (const c of cells) {
+                const td = document.createElement("td");
+                td.textContent = c === null || c === undefined ? "" : String(c);
+                tr.appendChild(td);
+              }
+              rulesBody.appendChild(tr);
+            }
+          }
+        } catch (e) {
+          rulesEmpty.textContent = "Error cargando reglas.";
+        }
+        try {
+          const w = await api("/api/wisdom?limit=18");
+          const items = Array.isArray(w?.items) ? w.items : [];
+          if (!items.length) {
+            wisdomEmpty.textContent = "Sin lecciones todavía.";
+          } else {
+            wisdomEmpty.textContent = "";
+            for (const it of items.slice().reverse()) {
+              const d = document.createElement("details");
+              const s = document.createElement("summary");
+              const until = it?.until ? ` | hasta ${String(it.until)}` : "";
+              s.textContent = `${String(it?.ts ?? "").trim()} ${String(it?.title ?? "").trim()}${until}`.trim();
+              const pre = document.createElement("pre");
+              pre.textContent = String(it?.text ?? "");
+              d.appendChild(s);
+              d.appendChild(pre);
+              wisdomList.appendChild(d);
+            }
+          }
+        } catch {
+          wisdomEmpty.textContent = "Error cargando lecciones.";
+        }
+      }
+
       btnSignal.addEventListener("click", async () => {
         btnSignal.disabled = true;
         try {
@@ -443,6 +733,12 @@
           const data = await api("/api/signal", { method: "POST", body: { exchange, symbol, timeframe } });
           show(data?.text ?? data);
           showChart(data?.chartUrl ?? null);
+          const conf = data?.signal?.model?.confidence ?? data?.signal?.model?.baseConfidence ?? null;
+          setConf(conf);
+          kConfSub.textContent = `${String(data?.signal?.model?.strategyName ?? "").trim()} ${String(data?.signal?.model?.strategyReason ?? "").trim()}`
+            .trim()
+            .slice(0, 120) || "—";
+          setGuard(data?.guard ?? null);
         } catch (e) {
           showErr(e);
         } finally {
@@ -460,6 +756,9 @@
           const data = await api("/api/ai", { method: "POST", body: { exchange, symbol, timeframe } });
           show(data?.text ?? data);
           showChart(data?.chartUrl ?? null);
+          setConf(null);
+          kConfSub.textContent = "—";
+          setGuard(null);
         } catch (e) {
           showErr(e);
         } finally {
@@ -480,6 +779,9 @@
           const text = titles.length ? [...header, "", ...titles.map((t) => `- ${t}`)].join("\n") : [...header, "", `Sin noticias`].join("\n");
           show(text);
           showChart(null);
+          setConf(null);
+          kConfSub.textContent = "—";
+          setGuard(null);
         } catch (e) {
           showErr(e);
         } finally {
@@ -500,10 +802,16 @@
         }
       });
 
+      document.querySelector('[data-tab="learn"]').addEventListener("click", async () => {
+        setTab("learn");
+        await refreshPanel();
+        await loadRulesAndWisdom();
+      });
+
       refreshHealth();
-      refreshMeta();
+      refreshPanel();
       setInterval(refreshHealth, 15000);
-      setInterval(refreshMeta, 30000);
+      setInterval(refreshPanel, 30000);
     </script>
   </body>
 </html>

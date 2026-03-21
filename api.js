@@ -22,6 +22,7 @@ import {
   loadTradeHistory,
   openPaperPosition,
   readWisdomEntries,
+  readWisdomEntriesAll,
   recordPaperPartialClose,
   updatePaperPosition
 } from "./lib.js";
@@ -100,6 +101,51 @@ function normalizeTimeframe(raw) {
 function isAllTimeframes(raw) {
   const tf = normalizeTimeframe(raw);
   return tf === "all" || tf === "todas" || tf === "*";
+}
+
+function parseBanUntilDate(entry) {
+  const m = String(entry ?? "").match(/(?:HASTA|UNTIL)=([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
+  return m ? m[1] : null;
+}
+
+function isExpiredBanEntry(entry) {
+  const until = parseBanUntilDate(entry);
+  if (!until) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return until < today;
+}
+
+function parseMetaLine(entry) {
+  const m = String(entry ?? "").match(/^\s*Meta:\s*(.+)$/m);
+  const raw = m ? String(m[1]) : "";
+  const parts = raw
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const meta = {};
+  for (const p of parts) {
+    const i = p.indexOf("=");
+    if (i === -1) continue;
+    const k = p.slice(0, i).trim();
+    const v = p.slice(i + 1).trim();
+    if (!k) continue;
+    meta[k] = v;
+  }
+  return meta;
+}
+
+function parseTitleLine(entry) {
+  const m = String(entry ?? "").match(/^\s*##\s*\[([^\]]+)\]\s*(.+)\s*$/m);
+  if (!m) return { ts: null, title: null };
+  return { ts: String(m[1]).trim(), title: String(m[2]).trim() };
+}
+
+function isRuleEntry(entry) {
+  const one = String(entry ?? "").toUpperCase();
+  return (
+    (one.includes("REGLA:") || one.includes("SENTENCIA:") || one.includes("LECCIÓN DE ORO:")) &&
+    (one.includes("NO OPERAR") || one.includes("EVITAR"))
+  );
 }
 
 function buildCorsHeaders(req) {
@@ -183,6 +229,89 @@ async function handle(req, res) {
           authTokenLen: token ? token.length : 0,
           keyLen: key ? key.length : 0,
           authorized: Boolean(token) && token === key
+        },
+        cors
+      );
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/wisdom") {
+      const rawLimit = Number(url.searchParams.get("limit") ?? "40");
+      const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, Math.floor(rawLimit))) : 40;
+      const out = await readWisdomEntriesAll();
+      const entries = Array.isArray(out?.entries) ? out.entries : [];
+      const slice = entries.slice(Math.max(0, entries.length - limit));
+      const items = slice.map((text) => {
+        const meta = parseMetaLine(text);
+        const tl = parseTitleLine(text);
+        const until = meta.until ?? parseBanUntilDate(text) ?? null;
+        return {
+          ts: tl.ts,
+          title: tl.title,
+          until,
+          expired: until ? isExpiredBanEntry(text) : false,
+          meta,
+          text: String(text).slice(0, 1800)
+        };
+      });
+      sendJson(res, 200, { ok: true, path: out?.path ?? null, total: entries.length, items }, cors);
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/rules/active") {
+      const out = await readWisdomEntriesAll();
+      const entries = Array.isArray(out?.entries) ? out.entries : [];
+      const items = [];
+      for (const text of entries.slice(-200).reverse()) {
+        if (!isRuleEntry(text)) continue;
+        if (isExpiredBanEntry(text)) continue;
+        const meta = parseMetaLine(text);
+        const tl = parseTitleLine(text);
+        const until = meta.until ?? parseBanUntilDate(text) ?? null;
+        const excerpt = String(text).replace(/\s+/g, " ").trim().slice(0, 260);
+        items.push({
+          ts: tl.ts,
+          title: tl.title,
+          symbol: meta.symbol ?? null,
+          timeframe: meta.timeframe ?? null,
+          reason: meta.reason ?? null,
+          until,
+          excerpt
+        });
+      }
+      sendJson(res, 200, { ok: true, total: items.length, items }, cors);
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/panel") {
+      const deepseekKey = Boolean(getEnvAny(["DEEPSEEK_KEY", "DEEPSEEK_API_KEY"]));
+      const apiKeyEnabled = Boolean(getEnvAny(["TRADING_BOT_API_KEY"])) && !isLocalRequest(req);
+      const wisdom = await readWisdomEntries({ last: 1 }).catch(() => ({ total: 0 }));
+      const rules = await readWisdomEntriesAll()
+        .then((w) => (Array.isArray(w?.entries) ? w.entries : []))
+        .then((arr) => arr.filter((e) => isRuleEntry(e) && !isExpiredBanEntry(e)).length)
+        .catch(() => 0);
+      const config = {
+        engramEnabled: !["0", "false", "off", "no"].includes(String(process.env.ENGRAM_ENABLED ?? "1").trim().toLowerCase()),
+        wisdomGuardEnabled: !["0", "false", "off", "no"].includes(
+          String(process.env.WISDOM_GUARD_ENABLED ?? "1").trim().toLowerCase()
+        ),
+        guardMinConfidence: Number.isFinite(Number(process.env.GUARD_MIN_CONFIDENCE))
+          ? Number(process.env.GUARD_MIN_CONFIDENCE)
+          : null,
+        learnBanEnabled: !["0", "false", "off", "no"].includes(String(process.env.LEARN_BAN_ENABLED ?? "1").trim().toLowerCase()),
+        learnBanLosses: Number.isFinite(Number(process.env.LEARN_BAN_LOSSES)) ? Number(process.env.LEARN_BAN_LOSSES) : null,
+        learnBanHours: Number.isFinite(Number(process.env.LEARN_BAN_HOURS)) ? Number(process.env.LEARN_BAN_HOURS) : null,
+        paperTp1ClosePct: Number.isFinite(Number(process.env.PAPER_TP1_CLOSE_PCT)) ? Number(process.env.PAPER_TP1_CLOSE_PCT) : null
+      };
+      sendJson(
+        res,
+        200,
+        {
+          ok: true,
+          ts: new Date().toISOString(),
+          meta: { deepseekKey, apiKeyEnabled, wisdomTotal: Number(wisdom?.total) || 0, activeRules: rules },
+          config
         },
         cors
       );
