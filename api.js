@@ -35,7 +35,8 @@ import {
   closeBinanceFuturesPosition,
   fetchFuturesTestnetEquity,
   fetchBinanceFuturesTopSymbols,
-  getRecentEngrams
+  getRecentEngrams,
+  saveEngram
 } from "./lib.js";
 
 function getEnvAny(names) {
