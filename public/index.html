@@ -872,9 +872,11 @@
       async function loadPaperPositions() {
         const body = $("posBody");
         const empty = $("posEmpty");
+        const syncStatus = $("posSyncInfo");
         try {
+          syncStatus.textContent = "Sincronizando...";
           const sync = await api("/api/paper/sync", { method: "POST" });
-          $("posSyncInfo").textContent = `Evaluadas: ${sync.evaluated || 0} | Cerradas: ${sync.closed || 0}`;
+          syncStatus.textContent = `Última sincronización: ${new Date().toLocaleTimeString()} (Ev: ${sync.evaluated || 0}, Cerradas: ${sync.closed || 0})`;
           
           const res = await api("/api/paper/positions");
           const items = res.items || [];
@@ -905,7 +907,10 @@
               body.appendChild(tr);
             });
           }
-        } catch (e) { console.error(e); }
+        } catch (e) { 
+          console.error(e);
+          syncStatus.textContent = "Error de sincronización";
+        }
       }
 
       window.closePaper = async (id) => {

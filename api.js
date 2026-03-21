@@ -935,14 +935,29 @@ async function handle(req, res) {
     if (req.method === "POST" && path === "/api/paper/close") {
       const body = (await readJsonBody(req)) ?? {};
       const id = String(body.id ?? "").trim();
-      const exitPrice = Number(body.exitPrice);
+      let exitPrice = Number(body.exitPrice);
       const reason = String(body.reason ?? "MANUAL").trim().toUpperCase();
       if (!id) {
         sendJson(res, 400, { error: "id_required" }, cors);
         return;
       }
-      if (!Number.isFinite(exitPrice)) {
-        sendJson(res, 400, { error: "exitPrice_invalid" }, cors);
+
+      // Si el precio de salida es 0 o inválido, intentar obtener el precio actual
+      if (!Number.isFinite(exitPrice) || exitPrice <= 0) {
+        try {
+          const positions = await listPaperPositions();
+          const pos = positions.find(p => p.id === id);
+          if (pos) {
+            const pxData = await fetchLastPrice({ exchange: pos.exchange, symbol: pos.symbol });
+            exitPrice = Number(pxData?.price ?? pxData?.last ?? pxData);
+          }
+        } catch (e) {
+          console.error("Error fetching price for manual close:", e);
+        }
+      }
+
+      if (!Number.isFinite(exitPrice) || exitPrice <= 0) {
+        sendJson(res, 400, { error: "exitPrice_invalid", message: "No se pudo obtener el precio actual para cerrar" }, cors);
         return;
       }
       const closed = await closePaperPosition({ id, exitPrice, reason });
