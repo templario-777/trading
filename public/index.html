@@ -353,6 +353,7 @@
           <div class="tab" data-tab="positions">Paper</div>
           <div class="tab" data-tab="learn">Aprendizaje</div>
           <div class="tab" data-tab="gains">Ganancias</div>
+          <div class="tab" data-tab="auto">Auto (Test)</div>
         </div>
         <div id="panelOut">
           <div class="kpis">
@@ -476,6 +477,46 @@
             </details>
           </div>
         </div>
+        <div id="panelAuto" style="display: none">
+          <div class="stack">
+            <div class="kpis">
+              <div class="kpi">
+                <div class="kpiLabel">Autotrade</div>
+                <div class="kpiVal" id="aEnabled">—</div>
+                <div class="kpiSub" id="aLast">—</div>
+              </div>
+              <div class="kpi">
+                <div class="kpiLabel">Última decisión</div>
+                <div class="kpiVal" id="aDecision">—</div>
+                <div class="kpiSub" id="aReason">—</div>
+              </div>
+            </div>
+            <div>
+              <div class="title">Posiciones (sombra)</div>
+              <div class="muted" id="aPosEmpty">Cargando...</div>
+              <table id="aPosTable" style="display: none">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Symbol</th>
+                    <th>TF</th>
+                    <th>Side</th>
+                    <th>Entry</th>
+                    <th>SL</th>
+                    <th>TP</th>
+                    <th>Opened</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody id="aPosBody"></tbody>
+              </table>
+            </div>
+            <details>
+              <summary>Raw</summary>
+              <pre id="aRaw" class="muted"></pre>
+            </details>
+          </div>
+        </div>
       </section>
     </main>
     <script>
@@ -519,6 +560,14 @@
       const gR30 = $("gR30");
       const gErr = $("gErr");
       const gRaw = $("gRaw");
+      const aEnabled = $("aEnabled");
+      const aLast = $("aLast");
+      const aDecision = $("aDecision");
+      const aReason = $("aReason");
+      const aPosEmpty = $("aPosEmpty");
+      const aPosTable = $("aPosTable");
+      const aPosBody = $("aPosBody");
+      const aRaw = $("aRaw");
       let panelCache = null;
 
       function setTab(name) {
@@ -529,6 +578,7 @@
         $("panelPositions").style.display = name === "positions" ? "" : "none";
         $("panelLearn").style.display = name === "learn" ? "" : "none";
         $("panelGains").style.display = name === "gains" ? "" : "none";
+        $("panelAuto").style.display = name === "auto" ? "" : "none";
       }
 
       document.querySelectorAll(".tab").forEach((t) => {
@@ -910,6 +960,74 @@
         }
       }
 
+      function fmtTs(ms) {
+        const n = Number(ms);
+        if (!Number.isFinite(n) || n <= 0) return "—";
+        try {
+          return new Date(n).toISOString().replace("T", " ").slice(0, 19) + "Z";
+        } catch {
+          return "—";
+        }
+      }
+
+      async function loadAutoPanel() {
+        aEnabled.textContent = "—";
+        aLast.textContent = "—";
+        aDecision.textContent = "—";
+        aReason.textContent = "—";
+        aRaw.textContent = "";
+        aPosEmpty.textContent = "Cargando...";
+        aPosTable.style.display = "none";
+        aPosBody.innerHTML = "";
+        try {
+          const s = await api("/api/futures/auto/status");
+          const st = s?.status ?? {};
+          const enabled = st?.enabled === true;
+          const testnet = st?.testnet === true;
+          aEnabled.textContent = enabled ? (testnet ? "ON (testnet)" : "ON") : "OFF";
+          aLast.textContent = `Last run: ${fmtTs(st?.lastRunAt)} | Last close: ${fmtTs(st?.lastCloseAt)}`;
+          const d = st?.lastDecision ?? null;
+          aDecision.textContent = d ? String(d.action ?? "—") : "—";
+          aReason.textContent = d ? JSON.stringify(d).slice(0, 220) : "—";
+          aRaw.textContent = JSON.stringify(s, null, 2);
+        } catch (e) {
+          aEnabled.textContent = "—";
+          aLast.textContent = isUnauthorized(e) ? "No autorizado." : "Error cargando estado.";
+        }
+        try {
+          const p = await api("/api/futures/shadow?last=60");
+          const items = Array.isArray(p?.items) ? p.items : [];
+          if (!items.length) {
+            aPosEmpty.textContent = "Sin posiciones.";
+            return;
+          }
+          aPosEmpty.textContent = "";
+          aPosTable.style.display = "";
+          for (const it of items) {
+            const tr = document.createElement("tr");
+            const cells = [
+              it?.status ?? "",
+              it?.symbol ?? "",
+              it?.timeframe ?? "",
+              it?.side ?? "",
+              it?.entry ?? "",
+              it?.sl ?? "",
+              it?.tp2 ?? it?.tp ?? "",
+              fmtTs(it?.openedAt),
+              it?.reason ?? ""
+            ];
+            for (const c of cells) {
+              const td = document.createElement("td");
+              td.textContent = c === null || c === undefined ? "" : String(c);
+              tr.appendChild(td);
+            }
+            aPosBody.appendChild(tr);
+          }
+        } catch (e) {
+          aPosEmpty.textContent = isUnauthorized(e) ? "No autorizado. Pega tu TRADING_BOT_API_KEY arriba." : "Error cargando posiciones.";
+        }
+      }
+
       btnSignal.addEventListener("click", async () => {
         btnSignal.disabled = true;
         try {
@@ -1032,6 +1150,12 @@
         setTab("gains");
         await refreshPanel();
         await loadFuturesSummary();
+      });
+
+      document.querySelector('[data-tab="auto"]').addEventListener("click", async () => {
+        setTab("auto");
+        await refreshPanel();
+        await loadAutoPanel();
       });
 
       refreshHealth();

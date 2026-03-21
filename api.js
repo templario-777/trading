@@ -15,6 +15,8 @@ import {
   fetchNewsSnapshot,
   fetchCandles,
   listBinanceFuturesPositions,
+  listFuturesShadowPositions,
+  setAutotradeFuturesStatus,
   formatAiMessage,
   formatSignalMessage,
   getDefaultTimeframes,
@@ -350,6 +352,30 @@ async function handle(req, res) {
         } else {
           sendJson(res, 200, { ok: false, error: "futures_unavailable", message: msg }, cors);
         }
+      }
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/futures/shadow") {
+      try {
+        const rawLast = Number(url.searchParams.get("last") ?? "80");
+        const last = Number.isFinite(rawLast) ? rawLast : 80;
+        const openOnly = ["1", "true", "on", "yes"].includes(String(url.searchParams.get("openOnly") ?? "").trim().toLowerCase());
+        const data = await listFuturesShadowPositions({ last, openOnly });
+        sendJson(res, 200, data, cors);
+      } catch (e) {
+        sendJson(res, 200, { ok: false, error: "shadow_unavailable", message: e?.message ?? String(e) }, cors);
+      }
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/futures/auto/status") {
+      try {
+        const mem = await loadMemory();
+        const s = mem.autotradeFutures && typeof mem.autotradeFutures === "object" ? mem.autotradeFutures : {};
+        sendJson(res, 200, { ok: true, ts: new Date().toISOString(), status: s }, cors);
+      } catch (e) {
+        sendJson(res, 200, { ok: false, error: "status_unavailable", message: e?.message ?? String(e) }, cors);
       }
       return;
     }

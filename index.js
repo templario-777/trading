@@ -56,6 +56,13 @@ import {
   appendWisdomEntry,
   learnFromLossWithDeepseek,
   learnFromTradeWithDeepseek,
+  listBinanceFuturesPositions,
+  placeBinanceFuturesOrder,
+  closeBinanceFuturesPosition,
+  upsertFuturesShadowPosition,
+  listFuturesShadowPositions,
+  closeFuturesShadowPosition,
+  setAutotradeFuturesStatus,
   filtrarPorSabiduria,
   generarAutocritica,
   generar_balance_de_aprendizaje,
@@ -85,6 +92,24 @@ function fmt(value, decimals = 4) {
   const n = Number(value);
   if (!Number.isFinite(n)) return "na";
   return n.toFixed(Math.max(0, Math.min(12, Math.floor(decimals))));
+}
+
+function envBool(name, def = "0") {
+  return !["0", "false", "off", "no"].includes(String(process.env[name] ?? def).trim().toLowerCase());
+}
+
+function envNum(name, def) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || String(raw).trim() === "") return def;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : def;
+}
+
+function parseCsv(name) {
+  return String(process.env[name] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 async function handleOne({ exchange, symbol, timeframe }) {
@@ -1284,6 +1309,146 @@ async function main() {
       }
     } finally {
       monitoring = false;
+    }
+  }
+
+  async function monitorFuturesTestnetPositions() {
+    const enabled = envBool("FUTURES_AUTOTRADE_ENABLED", "0");
+    const testnet = envBool("BINANCE_FUTURES_TESTNET", "0");
+    if (!enabled || !testnet) return;
+    try {
+      const tracked = await listFuturesShadowPositions({ last: 200, openOnly: true });
+      const items = Array.isArray(tracked?.items) ? tracked.items : [];
+      if (!items.length) return;
+      const live = await listBinanceFuturesPositions();
+      const liveItems = Array.isArray(live?.items) ? live.items : [];
+
+      for (const pos of items) {
+        try {
+          const sym = String(pos?.symbol ?? "").trim();
+          if (!sym) continue;
+          const tf = String(pos?.timeframe ?? "").trim().toLowerCase();
+          const livePos = liveItems.find((p) => String(p?.symbol ?? "").toUpperCase() === sym.replace("/", ""));
+          const mark = Number(livePos?.markPrice);
+          const entry = Number(pos?.entry);
+          const sl = Number(pos?.sl);
+          const tp = Number(pos?.tp2 ?? pos?.tp);
+          if (!Number.isFinite(mark) || !Number.isFinite(entry) || entry <= 0) continue;
+
+          let hit = null;
+          if (String(pos?.side) === "LONG") {
+            if (Number.isFinite(tp) && mark >= tp) hit = "TP";
+            if (Number.isFinite(sl) && mark <= sl) hit = "SL";
+          } else if (String(pos?.side) === "SHORT") {
+            if (Number.isFinite(tp) && mark <= tp) hit = "TP";
+            if (Number.isFinite(sl) && mark >= sl) hit = "SL";
+          }
+          if (!hit) continue;
+
+          await closeBinanceFuturesPosition({ symbol: sym, clientId: `aeth_close_${Date.now()}` }).catch(() => {});
+          await closeFuturesShadowPosition({
+            id: String(pos.id),
+            exitPrice: mark,
+            reason: hit,
+            exchange: "binanceusdm",
+            extra: { liveMarkPrice: mark, liveSymbol: livePos?.symbol ?? null }
+          }).catch(() => {});
+          await setAutotradeFuturesStatus({ lastCloseAt: Date.now(), lastCloseSymbol: sym, lastCloseReason: hit }).catch(() => {});
+        } catch (e) {
+          await setAutotradeFuturesStatus({ lastMonitorError: e?.message ?? String(e), lastMonitorErrorAt: Date.now() }).catch(() => {});
+        }
+      }
+    } catch (e) {
+      await setAutotradeFuturesStatus({ lastMonitorError: e?.message ?? String(e), lastMonitorErrorAt: Date.now() }).catch(() => {});
+    }
+  }
+
+  async function autoFuturesTestnetOnce() {
+    const enabled = envBool("FUTURES_AUTOTRADE_ENABLED", "0");
+    const testnet = envBool("BINANCE_FUTURES_TESTNET", "0");
+    if (!enabled || !testnet) return;
+    const symbols = parseCsv("FUTURES_AUTOTRADE_SYMBOLS");
+    const timeframes = parseCsv("FUTURES_AUTOTRADE_TIMEFRAMES");
+    const notionalUsdt = envNum("FUTURES_AUTOTRADE_NOTIONAL_USDT", 10);
+    const leverage = envNum("FUTURES_AUTOTRADE_LEVERAGE", envNum("FUTURES_DEFAULT_LEVERAGE", 3));
+    const candlesExchange = String(process.env.FUTURES_CANDLES_EXCHANGE ?? "binanceusdm").trim() || "binanceusdm";
+    if (!symbols.length || !timeframes.length) return;
+
+    const openOnly = await listFuturesShadowPositions({ last: 200, openOnly: true }).catch(() => ({ items: [] }));
+    const openItems = Array.isArray(openOnly?.items) ? openOnly.items : [];
+    const openKeys = new Set(openItems.map((p) => `${String(p?.symbol ?? "").trim()}|${String(p?.timeframe ?? "").trim()}`));
+
+    await setAutotradeFuturesStatus({
+      enabled: true,
+      testnet: true,
+      lastRunAt: Date.now(),
+      watch: { symbols, timeframes, notionalUsdt, leverage, candlesExchange }
+    }).catch(() => {});
+
+    for (const symbol of symbols) {
+      for (const timeframe of timeframes) {
+        const key = `${String(symbol).trim()}|${String(timeframe).trim()}`;
+        if (openKeys.has(key)) continue;
+        try {
+          const data = await fetchCandles({ exchange: candlesExchange, symbol, timeframe });
+          const signal = await buildSignal(data);
+          if (signal.side === "NEUTRAL") continue;
+          const guard = await evaluarGuardiaDeEntrada({ signal, candles: data.candles });
+          if (guard?.enabled && guard?.allow === false) {
+            await setAutotradeFuturesStatus({
+              lastDecisionAt: Date.now(),
+              lastDecision: { symbol, timeframe, action: "skip", reason: "blocked_by_guard", reasons: guard?.reasons ?? [] }
+            }).catch(() => {});
+            continue;
+          }
+
+          const side = signal.side === "LONG" ? "buy" : signal.side === "SHORT" ? "sell" : null;
+          if (!side) continue;
+
+          const clientId = `aeth_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+          const order = await placeBinanceFuturesOrder({
+            symbol,
+            side,
+            type: "market",
+            notionalUsdt,
+            leverage,
+            clientId
+          });
+          const tpFinal = Number.isFinite(Number(signal.tp2)) ? Number(signal.tp2) : Number(signal.tp);
+
+          const id = `ftpos_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+          await upsertFuturesShadowPosition({
+            id,
+            status: "OPEN",
+            symbol: String(symbol).trim().toUpperCase(),
+            timeframe: String(timeframe).trim().toLowerCase(),
+            side: signal.side,
+            entry: Number(signal.entry),
+            sl: Number(signal.sl),
+            tp: tpFinal,
+            tp1: Number.isFinite(Number(signal.tp1)) ? Number(signal.tp1) : null,
+            tp2: Number.isFinite(Number(signal.tp2)) ? Number(signal.tp2) : null,
+            initialSl: Number(signal.sl),
+            initialTp: tpFinal,
+            strategyName: signal.model?.strategyName ?? null,
+            strategyReason: signal.model?.strategyReason ?? null,
+            notionalUsdt,
+            leverage: order?.leverage ?? leverage,
+            clientId,
+            orderId: order?.order?.id ?? null,
+            openedAt: Date.now()
+          });
+          await setAutotradeFuturesStatus({
+            lastDecisionAt: Date.now(),
+            lastDecision: { symbol, timeframe, action: "open", side: signal.side, orderId: order?.order?.id ?? null }
+          }).catch(() => {});
+        } catch (e) {
+          await setAutotradeFuturesStatus({
+            lastDecisionAt: Date.now(),
+            lastDecision: { symbol, timeframe, action: "error", message: e?.message ?? String(e) }
+          }).catch(() => {});
+        }
+      }
     }
   }
 
@@ -2972,6 +3137,20 @@ async function main() {
   setInterval(() => {
     monitorPaperPositions().catch(() => {});
   }, 25_000);
+  const autoEnabled = envBool("FUTURES_AUTOTRADE_ENABLED", "0");
+  const autoTestnet = envBool("BINANCE_FUTURES_TESTNET", "0");
+  if (autoEnabled && autoTestnet) {
+    const autoSeconds = Math.max(15, Math.floor(envNum("FUTURES_AUTOTRADE_INTERVAL_SECONDS", 90)));
+    setInterval(() => {
+      monitorFuturesTestnetPositions().catch(() => {});
+    }, 20_000);
+    setInterval(() => {
+      autoFuturesTestnetOnce().catch(() => {});
+    }, autoSeconds * 1000);
+    autoFuturesTestnetOnce().catch(() => {});
+  } else if (autoEnabled && !autoTestnet) {
+    setAutotradeFuturesStatus({ enabled: false, error: "autotrade_requires_testnet", errorAt: Date.now() }).catch(() => {});
+  }
   setInterval(() => {
     runAlertsOnce().catch(() => {});
   }, 60_000);

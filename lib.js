@@ -2068,6 +2068,10 @@ function requireFuturesTradingEnabled() {
   if (confirm !== "YES_I_UNDERSTAND") throw new Error("futures_trading_not_confirmed");
 }
 
+function isFuturesTestnet() {
+  return envBool("BINANCE_FUTURES_TESTNET", "0");
+}
+
 export async function listBinanceFuturesPositions() {
   const ex = getBinanceFutures();
   const raw = await ex.fapiPrivateGetPositionRisk();
@@ -2098,6 +2102,163 @@ function normalizeFuturesSymbolInput(symbol) {
   if (s.includes("/")) return s;
   if (s.endsWith("USDT") && !s.includes("/")) return `${s.slice(0, -4)}/USDT`;
   return s;
+}
+
+export async function listFuturesShadowPositions({ last = 80, openOnly = false } = {}) {
+  const mem = await loadMemory();
+  const arr = Array.isArray(mem.futuresShadowPositions) ? mem.futuresShadowPositions : [];
+  const filtered = openOnly ? arr.filter((p) => String(p?.status ?? "") === "OPEN") : arr;
+  const n = Number.isFinite(Number(last)) ? Math.max(1, Math.min(300, Math.floor(Number(last)))) : 80;
+  const items = filtered
+    .slice()
+    .sort((a, b) => Number(b?.openedAt ?? 0) - Number(a?.openedAt ?? 0))
+    .slice(0, n);
+  return { ok: true, ts: new Date().toISOString(), items };
+}
+
+export async function upsertFuturesShadowPosition(pos) {
+  const p = pos && typeof pos === "object" ? pos : {};
+  const id = String(p.id ?? "").trim();
+  if (!id) throw new Error("id_required");
+  const mem = await loadMemory();
+  mem.futuresShadowPositions = Array.isArray(mem.futuresShadowPositions) ? mem.futuresShadowPositions : [];
+  const arr = mem.futuresShadowPositions;
+  const idx = arr.findIndex((x) => String(x?.id ?? "") === id);
+  if (idx === -1) arr.push(p);
+  else arr[idx] = { ...(arr[idx] ?? {}), ...p, id };
+  await saveMemory(mem);
+  return arr.find((x) => String(x?.id ?? "") === id) ?? null;
+}
+
+export async function setAutotradeFuturesStatus(patch) {
+  const p = patch && typeof patch === "object" ? patch : {};
+  const mem = await loadMemory();
+  const prev = mem.autotradeFutures && typeof mem.autotradeFutures === "object" ? mem.autotradeFutures : {};
+  mem.autotradeFutures = { ...prev, ...p, updatedAt: nowMs() };
+  await saveMemory(mem);
+  return mem.autotradeFutures;
+}
+
+export async function closeFuturesShadowPosition({ id, exitPrice, reason, exchange = "binanceusdm", extra } = {}) {
+  const pid = String(id ?? "").trim();
+  if (!pid) throw new Error("id_required");
+  const mem = await loadMemory();
+  mem.futuresShadowPositions = Array.isArray(mem.futuresShadowPositions) ? mem.futuresShadowPositions : [];
+  const arr = mem.futuresShadowPositions;
+  const idx = arr.findIndex((x) => String(x?.id ?? "") === pid);
+  if (idx === -1) return null;
+  const pos = arr[idx] && typeof arr[idx] === "object" ? arr[idx] : {};
+  if (String(pos.status ?? "") === "CLOSED") return pos;
+
+  const riskSl = Number(pos.initialSl ?? pos.sl);
+  const r = computeRMultiple(pos.side, Number(pos.entry), riskSl, Number(exitPrice));
+  const closed = {
+    ...pos,
+    exchange,
+    exit: exitPrice,
+    reason,
+    r,
+    status: "CLOSED",
+    closedAt: nowMs()
+  };
+  arr[idx] = closed;
+
+  mem.trades = Array.isArray(mem.trades) ? mem.trades : [];
+  mem.trades.push({
+    id: `ft_${nowMs()}_${Math.random().toString(16).slice(2)}`,
+    exchange,
+    symbol: closed.symbol,
+    timeframe: closed.timeframe,
+    side: closed.side,
+    entry: closed.entry,
+    sl: closed.sl,
+    tp: closed.tp,
+    tp1: closed.tp1 ?? null,
+    tp2: closed.tp2 ?? null,
+    initialSl: closed.initialSl ?? null,
+    initialTp: closed.initialTp ?? null,
+    strategyName: closed.strategyName ?? null,
+    strategyReason: closed.strategyReason ?? null,
+    exit: exitPrice,
+    reason,
+    r,
+    source: "futures_testnet",
+    openedAt: closed.openedAt,
+    closedAt: closed.closedAt
+  });
+
+  const k = keyFor(closed.symbol, closed.timeframe);
+  const prev = mem.stats?.[k];
+  const next =
+    prev && typeof prev === "object"
+      ? { ...prev }
+      : { n: 0, wins: 0, sumR: 0, avgR: 0, winRate: 0 };
+  next.n = Number(next.n) + 1;
+  if (Number.isFinite(r) && r > 0) next.wins = Number(next.wins) + 1;
+  if (Number.isFinite(r)) next.sumR = Number(next.sumR) + r;
+  next.avgR = next.n ? Number(next.sumR) / Number(next.n) : 0;
+  next.winRate = next.n ? Number(next.wins) / Number(next.n) : 0;
+  mem.stats = mem.stats && typeof mem.stats === "object" ? mem.stats : {};
+  mem.stats[k] = next;
+
+  const strat = String(closed.strategyName ?? "").trim();
+  if (strat) {
+    mem.strategyStats = mem.strategyStats && typeof mem.strategyStats === "object" ? mem.strategyStats : {};
+    const perKey =
+      mem.strategyStats[k] && typeof mem.strategyStats[k] === "object" ? mem.strategyStats[k] : {};
+    const sPrev = perKey[strat] && typeof perKey[strat] === "object" ? perKey[strat] : {};
+    const sNext = { n: Number(sPrev.n) || 0, wins: Number(sPrev.wins) || 0, sumR: Number(sPrev.sumR) || 0 };
+    if (Number.isFinite(r)) {
+      sNext.n += 1;
+      if (r > 0) sNext.wins += 1;
+      sNext.sumR += r;
+    }
+    sNext.avgR = sNext.n ? sNext.sumR / sNext.n : 0;
+    sNext.winRate = sNext.n ? sNext.wins / sNext.n : 0;
+    mem.strategyStats[k] = { ...perKey, [strat]: sNext };
+  }
+
+  await saveMemory(mem);
+
+  const apiKey = String(process.env.DEEPSEEK_KEY ?? process.env.DEEPSEEK_API_KEY ?? "").trim();
+  if (apiKey) {
+    let signalSnapshot = null;
+    try {
+      const candlesExchange = String(process.env.FUTURES_CANDLES_EXCHANGE ?? "binanceusdm").trim() || "binanceusdm";
+      const candlesData = await fetchCandles({ exchange: candlesExchange, symbol: closed.symbol, timeframe: closed.timeframe });
+      const candles = Array.isArray(candlesData?.candles) ? candlesData.candles : [];
+      if (candles.length) {
+        signalSnapshot = await buildSignal({ exchange: candlesExchange, symbol: closed.symbol, timeframe: closed.timeframe, candles });
+      }
+    } catch {
+      signalSnapshot = null;
+    }
+    await learnFromTradeWithDeepseek({
+      apiKey,
+      trade: {
+        exchange,
+        symbol: closed.symbol,
+        timeframe: closed.timeframe,
+        side: closed.side,
+        entry: closed.entry,
+        sl: closed.sl,
+        tp: closed.tp,
+        exit: exitPrice,
+        reason,
+        r
+      },
+      signal: signalSnapshot,
+      context: {
+        source: "futures_testnet",
+        kind: "close",
+        reason: String(reason ?? ""),
+        testnet: isFuturesTestnet(),
+        extra: extra && typeof extra === "object" ? extra : null
+      }
+    }).catch(() => {});
+  }
+
+  return closed;
 }
 
 export async function placeBinanceFuturesOrder({
