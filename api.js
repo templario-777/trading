@@ -234,30 +234,30 @@ async function handle(req, res) {
         return;
       }
 
-      const data = await fetchCandles({ exchange, symbol, timeframe });
-      const signal = await buildSignal(data);
-      const chartUrl = buildSignalChartUrl({ signal, candles: data.candles });
-      const guard = await evaluarGuardiaDeEntrada({ chatId: null, signal, candles: data.candles });
-      let text = formatSignalMessage(signal);
-      const sScore = Number(guard?.metrics?.sentimentScore);
-      const sLabel = guard?.metrics?.sentimentLabel ? String(guard.metrics.sentimentLabel) : "";
-      if (Number.isFinite(sScore)) {
-        text += `\n\n📰 Sentimiento: ${Math.round(sScore)}/100 ${sLabel}`.trim();
-      }
-      if (guard?.enabled) {
-        if (guard.allow) {
-          text += `\n\n🛡️ GUARDIA: OK`;
-        } else {
-          const reasons = Array.isArray(guard.reasons) ? guard.reasons : [];
-          text += `\n\n🚫 GUARDIA: BLOQUEAR\n- ${reasons.join("\n- ")}`;
+      try {
+        const data = await fetchCandles({ exchange, symbol, timeframe });
+        const signal = await buildSignal(data);
+        const chartUrl = buildSignalChartUrl({ signal, candles: data.candles });
+        const guard = await evaluarGuardiaDeEntrada({ chatId: null, signal, candles: data.candles });
+        let text = formatSignalMessage(signal);
+        const sScore = Number(guard?.metrics?.sentimentScore);
+        const sLabel = guard?.metrics?.sentimentLabel ? String(guard.metrics.sentimentLabel) : "";
+        if (Number.isFinite(sScore)) {
+          text += `\n\n📰 Sentimiento: ${Math.round(sScore)}/100 ${sLabel}`.trim();
         }
+        if (guard?.enabled) {
+          if (guard.allow) {
+            text += `\n\n🛡️ GUARDIA: OK`;
+          } else {
+            const reasons = Array.isArray(guard.reasons) ? guard.reasons : [];
+            text += `\n\n🚫 GUARDIA: BLOQUEAR\n- ${reasons.join("\n- ")}`;
+          }
+        }
+        sendJson(res, 200, { exchange, symbol, timeframe, signal, text, chartUrl, guard }, cors);
+      } catch (e) {
+        const msg = e?.message ? String(e.message) : String(e);
+        sendJson(res, 200, { exchange, symbol, timeframe, ok: false, error: "signal_unavailable", message: msg }, cors);
       }
-      sendJson(
-        res,
-        200,
-        { exchange, symbol, timeframe, signal, text, chartUrl, guard },
-        cors
-      );
       return;
     }
 
