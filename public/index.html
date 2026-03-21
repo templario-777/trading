@@ -1140,6 +1140,10 @@
         try {
           const m = await api("/api/meta");
           
+          $("healthVal").textContent = "OK";
+          $("healthVal").className = "font-medium text-ok";
+          $("statusDot").className = "w-2 h-2 rounded-full bg-ok";
+
           if (m.authorized) {
             $("authVal").textContent = "OK";
             $("authVal").className = "font-medium text-ok";
@@ -1180,6 +1184,10 @@
           }
         } catch (e) {
           // If meta fails completely (e.g. 401 or network error)
+          $("healthVal").textContent = "OFFLINE";
+          $("healthVal").className = "font-medium text-danger";
+          $("statusDot").className = "w-2 h-2 rounded-full bg-danger animate-pulse";
+
           if (e.status === 401) {
             $("authVal").textContent = "UNAUTHORIZED";
           } else {
