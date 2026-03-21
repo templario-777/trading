@@ -23,6 +23,7 @@ import {
   generarAutocritica,
   learnFromTradeWithDeepseek,
   listPaperPositions,
+  loadMemory,
   loadTradeHistory,
   openPaperPosition,
   readWisdomEntries,
@@ -30,7 +31,8 @@ import {
   recordPaperPartialClose,
   updatePaperPosition,
   placeBinanceFuturesOrder,
-  closeBinanceFuturesPosition
+  closeBinanceFuturesPosition,
+  fetchFuturesTestnetEquity
 } from "./lib.js";
 
 function getEnvAny(names) {
@@ -376,6 +378,18 @@ async function handle(req, res) {
         sendJson(res, 200, { ok: true, ts: new Date().toISOString(), status: s }, cors);
       } catch (e) {
         sendJson(res, 200, { ok: false, error: "status_unavailable", message: e?.message ?? String(e) }, cors);
+      }
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/futures/equity") {
+      try {
+        const rawLimit = Number(url.searchParams.get("limit") ?? "200");
+        const limit = Number.isFinite(rawLimit) ? rawLimit : 200;
+        const data = await fetchFuturesTestnetEquity({ limit });
+        sendJson(res, 200, data, cors);
+      } catch (e) {
+        sendJson(res, 200, { ok: false, error: "equity_unavailable", message: e?.message ?? String(e) }, cors);
       }
       return;
     }

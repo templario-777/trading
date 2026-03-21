@@ -492,6 +492,11 @@
               </div>
             </div>
             <div>
+              <div class="title">Equity (R)</div>
+              <img id="aEqChart" alt="equity" style="width: 100%; border-radius: 12px; display: none" />
+              <div class="muted" id="aEqMsg"></div>
+            </div>
+            <div>
               <div class="title">Posiciones (sombra)</div>
               <div class="muted" id="aPosEmpty">Cargando...</div>
               <table id="aPosTable" style="display: none">
@@ -564,6 +569,8 @@
       const aLast = $("aLast");
       const aDecision = $("aDecision");
       const aReason = $("aReason");
+      const aEqChart = $("aEqChart");
+      const aEqMsg = $("aEqMsg");
       const aPosEmpty = $("aPosEmpty");
       const aPosTable = $("aPosTable");
       const aPosBody = $("aPosBody");
@@ -750,27 +757,52 @@
       }
 
       async function refreshPanel() {
+        let meta = null;
+        try {
+          meta = await api("/api/meta");
+        } catch {
+          meta = null;
+        }
+
+        const deepOk = Boolean(meta?.deepseekKey);
+        const mem = Number.isFinite(Number(meta?.wisdomTotal)) ? Number(meta.wisdomTotal) : 0;
+        bAi.classList.toggle("ok", deepOk);
+        bAi.classList.toggle("bad", !deepOk);
+        bAi.textContent = `IA: ${deepOk ? "OK" : "FALTA"} | Mem: ${mem}`;
+
+        const apiKeyEnabled = Boolean(meta?.apiKeyEnabled);
+        const authorized = Boolean(meta?.authorized);
+        bAuth.classList.remove("bad");
+        bAuth.classList.toggle("ok", apiKeyEnabled && authorized);
+        bAuth.textContent = apiKeyEnabled ? (authorized ? "API: Auth OK" : "API: No autorizado") : "API: Auth OFF";
+
+        bRules.classList.remove("ok");
+        bRules.classList.remove("bad");
+        bRules.textContent = authorized ? "Reglas: ..." : "Reglas: (auth)";
+
+        cfgKv.innerHTML = "";
+        if (!authorized) {
+          const kk = document.createElement("div");
+          kk.className = "k";
+          kk.textContent = "Auth";
+          const vv = document.createElement("div");
+          vv.textContent = "Pega tu TRADING_BOT_API_KEY arriba.";
+          cfgKv.appendChild(kk);
+          cfgKv.appendChild(vv);
+          return;
+        }
+
         try {
           const p = await api("/api/panel");
           panelCache = p && typeof p === "object" ? p : null;
           const m = panelCache?.meta ?? null;
           const cfg = panelCache?.config ?? null;
 
-          bAi.classList.toggle("ok", Boolean(m?.deepseekKey));
-          bAi.classList.toggle("bad", !m?.deepseekKey);
-          const mem = Number.isFinite(Number(m?.wisdomTotal)) ? Number(m.wisdomTotal) : 0;
-          bAi.textContent = `IA: ${m?.deepseekKey ? "OK" : "FALTA"} | Mem: ${mem}`;
-
-          bAuth.classList.remove("bad");
-          bAuth.classList.add(m?.apiKeyEnabled ? "ok" : "");
-          bAuth.textContent = `API: ${m?.apiKeyEnabled ? "Auth ON" : "Auth OFF"}`;
-
           const rules = Number.isFinite(Number(m?.activeRules)) ? Number(m.activeRules) : 0;
           bRules.classList.toggle("bad", rules >= 1);
           bRules.classList.toggle("ok", rules === 0);
           bRules.textContent = `Reglas: ${rules}`;
 
-          cfgKv.innerHTML = "";
           const entries = [
             ["Wisdom Guard", cfg?.wisdomGuardEnabled ? "ON" : "OFF"],
             ["ENGRAM", cfg?.engramEnabled ? "ON" : "OFF"],
@@ -789,26 +821,8 @@
             cfgKv.appendChild(kk);
             cfgKv.appendChild(vv);
           }
-        } catch (e) {
-          bAi.classList.remove("ok");
-          bAi.classList.add("bad");
-          bAi.textContent = "IA: ?";
-          bAuth.classList.remove("ok");
-          bAuth.classList.add("bad");
-          bAuth.textContent = isUnauthorized(e) ? "API: No autorizado" : "API: ?";
-          bRules.classList.remove("ok");
-          bRules.classList.add("bad");
+        } catch {
           bRules.textContent = "Reglas: ?";
-          cfgKv.innerHTML = "";
-          if (isUnauthorized(e)) {
-            const kk = document.createElement("div");
-            kk.className = "k";
-            kk.textContent = "Auth";
-            const vv = document.createElement("div");
-            vv.textContent = "Pega tu TRADING_BOT_API_KEY arriba.";
-            cfgKv.appendChild(kk);
-            cfgKv.appendChild(vv);
-          }
         }
       }
 
@@ -976,6 +990,9 @@
         aDecision.textContent = "—";
         aReason.textContent = "—";
         aRaw.textContent = "";
+        aEqMsg.textContent = "";
+        aEqChart.style.display = "none";
+        aEqChart.removeAttribute("src");
         aPosEmpty.textContent = "Cargando...";
         aPosTable.style.display = "none";
         aPosBody.innerHTML = "";
@@ -993,6 +1010,19 @@
         } catch (e) {
           aEnabled.textContent = "—";
           aLast.textContent = isUnauthorized(e) ? "No autorizado." : "Error cargando estado.";
+        }
+        try {
+          const eq = await api("/api/futures/equity?limit=250");
+          const u = typeof eq?.chartUrl === "string" ? eq.chartUrl.trim() : "";
+          if (u) {
+            aEqChart.src = u;
+            aEqChart.style.display = "";
+            aEqMsg.textContent = "";
+          } else {
+            aEqMsg.textContent = "Equity: sin datos todavía.";
+          }
+        } catch (e) {
+          aEqMsg.textContent = isUnauthorized(e) ? "Equity: no autorizado." : "Equity: error.";
         }
         try {
           const p = await api("/api/futures/shadow?last=60");

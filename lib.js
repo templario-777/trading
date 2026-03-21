@@ -3220,6 +3220,74 @@ export function buildSignalChartUrl({ signal, candles, window = 120 } = {}) {
   return `${base}?${qs}`;
 }
 
+export async function fetchFuturesTestnetEquity({ limit = 200 } = {}) {
+  const enabled = !["0", "false", "off", "no"].includes(String(process.env.CHART_ENABLED ?? "1").trim().toLowerCase());
+  const base = String(process.env.CHART_BASE_URL ?? "https://quickchart.io/chart").trim() || "https://quickchart.io/chart";
+  const n = Number.isFinite(Number(limit)) ? Math.max(20, Math.min(500, Math.floor(Number(limit)))) : 200;
+
+  const mem = await loadMemory();
+  const trades = Array.isArray(mem.trades) ? mem.trades : [];
+  const fut = trades
+    .filter((t) => String(t?.source ?? "") === "futures_testnet")
+    .slice()
+    .sort((a, b) => Number(a?.closedAt ?? 0) - Number(b?.closedAt ?? 0))
+    .slice(-n);
+
+  let eq = 0;
+  const points = [];
+  for (const t of fut) {
+    const r = Number(t?.r);
+    if (Number.isFinite(r)) eq += r;
+    points.push({ t: Number(t?.closedAt ?? 0) || null, equityR: Number.isFinite(eq) ? eq : 0, r: Number.isFinite(r) ? r : null });
+  }
+
+  if (!enabled || points.length < 10) {
+    return { ok: true, ts: new Date().toISOString(), points, chartUrl: null };
+  }
+
+  const labels = points.map(() => "");
+  const data = points.map((p) => Number(p.equityR));
+  const color = data.length && data[data.length - 1] >= (data[0] ?? 0) ? "#5cffb0" : "#ff6b6b";
+  const config = {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Equity (R)",
+          data,
+          borderColor: color,
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      legend: { labels: { fontColor: "#e9eefc" } },
+      title: { display: true, text: "Futures Testnet · Equity (R)", fontColor: "#e9eefc" },
+      scales: {
+        xAxes: [{ display: false }],
+        yAxes: [
+          {
+            gridLines: { color: "rgba(255,255,255,0.08)" },
+            ticks: { fontColor: "#9db0d9" }
+          }
+        ]
+      }
+    }
+  };
+  const qs = new URLSearchParams({
+    c: JSON.stringify(config),
+    backgroundColor: "transparent",
+    width: "700",
+    height: "260",
+    format: "png"
+  }).toString();
+  return { ok: true, ts: new Date().toISOString(), points, chartUrl: `${base}?${qs}` };
+}
+
 export async function evaluarGuardiaDeEntrada({ chatId, signal, candles, headlines } = {}) {
   const enabled = !["0", "false", "off", "no"].includes(String(process.env.GUARD_ENABLED ?? "1").trim().toLowerCase());
   if (!enabled) return { enabled: false, allow: true, reasons: [] };
