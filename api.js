@@ -283,32 +283,37 @@ async function handle(req, res) {
         sendJson(res, 400, { error: "missing_env", env: "DEEPSEEK_KEY" }, cors);
         return;
       }
-      const data = await fetchCandles({ exchange, symbol, timeframe });
-      const ai = await buildAiTradeIdea({ ...data, apiKey });
-      const pseudoSignal = {
-        symbol: ai.symbol,
-        exchange: ai.exchange,
-        timeframe: ai.timeframe,
-        side: ai.accion === "COMPRA" ? "LONG" : ai.accion === "VENTA" ? "SHORT" : "NEUTRAL",
-        entry: ai.precio_entrada,
-        sl: ai.sl,
-        tp: ai.tp
-      };
-      const chartUrl = buildSignalChartUrl({ signal: pseudoSignal, candles: data.candles });
-      let text = formatAiMessage(ai);
-      const headlines = Array.isArray(ai?.context?.headlines) ? ai.context.headlines : [];
-      const wisdom = String(ai?.context?.wisdom ?? "").trim();
-      const losses = String(ai?.context?.recentLosses ?? "").trim();
-      if (headlines.length) {
-        text += `\n\n📰 NOTICIAS:\n- ${headlines.slice(0, 8).join("\n- ")}`;
+      try {
+        const data = await fetchCandles({ exchange, symbol, timeframe });
+        const ai = await buildAiTradeIdea({ ...data, apiKey });
+        const pseudoSignal = {
+          symbol: ai.symbol,
+          exchange: ai.exchange,
+          timeframe: ai.timeframe,
+          side: ai.accion === "COMPRA" ? "LONG" : ai.accion === "VENTA" ? "SHORT" : "NEUTRAL",
+          entry: ai.precio_entrada,
+          sl: ai.sl,
+          tp: ai.tp
+        };
+        const chartUrl = buildSignalChartUrl({ signal: pseudoSignal, candles: data.candles });
+        let text = formatAiMessage(ai);
+        const headlines = Array.isArray(ai?.context?.headlines) ? ai.context.headlines : [];
+        const wisdom = String(ai?.context?.wisdom ?? "").trim();
+        const losses = String(ai?.context?.recentLosses ?? "").trim();
+        if (headlines.length) {
+          text += `\n\n📰 NOTICIAS:\n- ${headlines.slice(0, 8).join("\n- ")}`;
+        }
+        if (wisdom) {
+          text += `\n\n🧠 LECCIONES_RECIENTES:\n${wisdom.slice(0, 600)}`;
+        }
+        if (losses) {
+          text += `\n\n⚠️ ERRORES_RECIENTES:\n${losses.slice(0, 600)}`;
+        }
+        sendJson(res, 200, { exchange, symbol, timeframe, ai, text, chartUrl }, cors);
+      } catch (e) {
+        const msg = e?.message ? String(e.message) : String(e);
+        sendJson(res, 200, { exchange, symbol, timeframe, ok: false, error: "ai_unavailable", message: msg }, cors);
       }
-      if (wisdom) {
-        text += `\n\n🧠 LECCIONES_RECIENTES:\n${wisdom.slice(0, 600)}`;
-      }
-      if (losses) {
-        text += `\n\n⚠️ ERRORES_RECIENTES:\n${losses.slice(0, 600)}`;
-      }
-      sendJson(res, 200, { exchange, symbol, timeframe, ai, text, chartUrl }, cors);
       return;
     }
 
