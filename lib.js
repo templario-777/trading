@@ -599,7 +599,8 @@ export async function learnFromTradeWithDeepseek({ apiKey, trade, signal, contex
     "OBJETIVO: Extraer lecciones accionables y reglas que eviten repetir errores y refuercen lo que funciona.",
     "REGLAS:",
     "- Si fue trade ganador, explica por qué funcionó y qué condiciones repetir.",
-    "- Si fue trade perdedor, explica el fallo y propone una regla corta tipo NO OPERAR / ESPERAR / AJUSTAR.",
+    "- Si fue trade perdedor, explica el fallo y propone una regla corta tipo NO OPERAR / EVITAR / ESPERAR / AJUSTAR.",
+    "- Si fue trade perdedor, la regla DEBE empezar con NO OPERAR o EVITAR e incluir SIMBOLO y TIMEFRAME.",
     "- Sé concreto, corto, sin teoría.",
     "",
     `SIMBOLO: ${symbol}`,
@@ -656,6 +657,18 @@ function normalizeForSearch(text) {
     .trim();
 }
 
+function parseBanUntilDate(entry) {
+  const m = String(entry ?? "").match(/(?:HASTA|UNTIL)=([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
+  return m ? m[1] : null;
+}
+
+function isExpiredBanEntry(entry) {
+  const until = parseBanUntilDate(entry);
+  if (!until) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return until < today;
+}
+
 export function filtrarPorSabiduria({ signals, wisdomEntries } = {}) {
   const arr = Array.isArray(signals) ? signals : [];
   const entries = Array.isArray(wisdomEntries) ? wisdomEntries : [];
@@ -680,6 +693,7 @@ export function filtrarPorSabiduria({ signals, wisdomEntries } = {}) {
         one.includes("SENTENCIA:") && one.includes("NO OPERAR") ||
         one.includes("LECCIÓN DE ORO:") && (one.includes("NO OPERAR") || one.includes("EVITAR"));
       if (hasBan) {
+        if (isExpiredBanEntry(e)) continue;
         shouldBlock = true;
         break;
       }
@@ -764,6 +778,7 @@ export function evaluarBloqueoPorSabiduria({ signal, wisdomEntries } = {}) {
       (one.includes("LECCIÓN DE ORO:") && (one.includes("NO OPERAR") || one.includes("EVITAR"))) ||
       (one.includes("REGla:".toUpperCase()) && (one.includes("NO OPERAR") || one.includes("EVITAR")));
     if (!hasBan) continue;
+    if (isExpiredBanEntry(e)) continue;
     const excerpt = String(e ?? "")
       .replace(/\s+/g, " ")
       .trim()
@@ -799,11 +814,11 @@ export async function generarAutocritica({ apiKey, tradeFallido, contexto } = {}
     `Timeframe: ${timeframe || "N/A"}`,
     `Side: ${side || "N/A"}`,
     `Pérdida(%): ${Number.isFinite(Number(pnl)) ? Number(pnl).toFixed(2) : "N/A"}`,
-    `Motivo: ${motivo} (Stop Loss alcanzado).`,
+    `Motivo: ${motivo}.`,
     `Contexto: ${ctxText || "N/A"}`,
     "",
     "1) Explica en qué se equivocó el bot (concretamente).",
-    "2) Da una 'Lección de Oro' accionable (una regla corta).",
+    "2) Da una 'Lección de Oro' accionable (una regla corta). Debe empezar con NO OPERAR o EVITAR e incluir SIMBOLO y TIMEFRAME.",
     "3) Propón una mejora técnica concreta del bot (parámetro -> nuevo valor y por qué).",
     "",
     "Devuelve JSON con: que_paso, leccion_de_oro, mejora_tecnica (strings cortos)."
@@ -3286,17 +3301,78 @@ export async function closePaperPosition({ id, exitPrice, reason }) {
   }
   const apiKey = String(process.env.DEEPSEEK_KEY ?? process.env.DEEPSEEK_API_KEY ?? "").trim();
   if (apiKey) {
+    let signalSnapshot = null;
+    try {
+      const candlesData = await fetchCandles({ exchange: closed.exchange, symbol: closed.symbol, timeframe: closed.timeframe });
+      const candles = Array.isArray(candlesData?.candles) ? candlesData.candles : [];
+      if (candles.length) {
+        signalSnapshot = await buildSignal({ exchange: closed.exchange, symbol: closed.symbol, timeframe: closed.timeframe, candles });
+      }
+    } catch {
+      signalSnapshot = null;
+    }
     await learnFromTradeWithDeepseek({
       apiKey,
       trade: closed,
-      signal: null,
-      context: { source: "paper", kind: "close", reason: String(reason ?? "") }
+      signal: signalSnapshot,
+      context: {
+        source: "paper",
+        kind: "close",
+        reason: String(reason ?? ""),
+        sl: closed.sl,
+        tp: closed.tp,
+        tp1: closed.tp1,
+        tp2: closed.tp2,
+        exit: closed.exit
+      }
     }).catch(() => {});
     if (shouldRemember) {
       await generarAutocritica({
         apiKey,
         tradeFallido: closed,
-        contexto: { source: "paper", kind: "close", reason: String(reason ?? "") }
+        contexto: {
+          source: "paper",
+          kind: "close",
+          reason: String(reason ?? ""),
+          signal: signalSnapshot
+        }
+      }).catch(() => {});
+    }
+  }
+  const banEnabled = !["0", "false", "off", "no"].includes(
+    String(process.env.LEARN_BAN_ENABLED ?? "1").trim().toLowerCase()
+  );
+  const banLosses = Number.isFinite(Number(process.env.LEARN_BAN_LOSSES))
+    ? Math.max(2, Math.min(10, Math.floor(Number(process.env.LEARN_BAN_LOSSES))))
+    : 3;
+  const banHours = Number.isFinite(Number(process.env.LEARN_BAN_HOURS))
+    ? Math.max(1, Math.min(24 * 30, Math.floor(Number(process.env.LEARN_BAN_HOURS))))
+    : 24;
+  if (banEnabled && shouldRemember) {
+    const k2 = keyFor(closed.symbol, closed.timeframe);
+    const mem2 = await loadMemory();
+    const trades = Array.isArray(mem2.trades) ? mem2.trades : [];
+    const recent = trades
+      .filter((t) => keyFor(t?.symbol, t?.timeframe) === k2)
+      .sort((a, b) => Number(b?.closedAt ?? 0) - Number(a?.closedAt ?? 0))
+      .slice(0, 20);
+    let streak = 0;
+    for (const t of recent) {
+      const rr = Number(t?.r);
+      const rsn = String(t?.reason ?? "").trim().toUpperCase();
+      const loss = rsn === "SL" || rsn === "TIMEOUT" || (Number.isFinite(rr) && rr < 0);
+      if (!loss) break;
+      streak += 1;
+    }
+    if (streak >= banLosses) {
+      const until = new Date(Date.now() + banHours * 3600_000).toISOString().slice(0, 10);
+      await appendWisdomEntry({
+        title: `Bloqueo temporal · ${closed.symbol} ${closed.timeframe}`.trim(),
+        blocks: [
+          `Regla: NO OPERAR ${closed.symbol} ${closed.timeframe} HASTA=${until}`,
+          `Motivo: ${streak} pérdidas seguidas (SL/TIMEOUT/R<0)`
+        ],
+        meta: { symbol: closed.symbol, timeframe: closed.timeframe, until }
       }).catch(() => {});
     }
   }
@@ -3361,11 +3437,29 @@ export async function recordPaperPartialClose({ id, exitPrice, reason, closePct 
   await saveMemory(mem);
   const apiKey = String(process.env.DEEPSEEK_KEY ?? process.env.DEEPSEEK_API_KEY ?? "").trim();
   if (apiKey) {
+    let signalSnapshot = null;
+    try {
+      const candlesData = await fetchCandles({ exchange: trade.exchange, symbol: trade.symbol, timeframe: trade.timeframe });
+      const candles = Array.isArray(candlesData?.candles) ? candlesData.candles : [];
+      if (candles.length) {
+        signalSnapshot = await buildSignal({ exchange: trade.exchange, symbol: trade.symbol, timeframe: trade.timeframe, candles });
+      }
+    } catch {
+      signalSnapshot = null;
+    }
     await learnFromTradeWithDeepseek({
       apiKey,
       trade,
-      signal: null,
-      context: { source: "paper", kind: "partial", reason: String(reason ?? ""), closePct: pct }
+      signal: signalSnapshot,
+      context: {
+        source: "paper",
+        kind: "partial",
+        reason: String(reason ?? ""),
+        closePct: pct,
+        exit: trade.exit,
+        sl: trade.sl,
+        tp: trade.tp
+      }
     }).catch(() => {});
   }
   return trade;
