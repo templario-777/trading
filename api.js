@@ -14,6 +14,7 @@ import {
   fetchBinanceFuturesSummary,
   fetchNewsSnapshot,
   fetchCandles,
+  listBinanceFuturesPositions,
   formatAiMessage,
   formatSignalMessage,
   getDefaultTimeframes,
@@ -25,7 +26,9 @@ import {
   readWisdomEntries,
   readWisdomEntriesAll,
   recordPaperPartialClose,
-  updatePaperPosition
+  updatePaperPosition,
+  placeBinanceFuturesOrder,
+  closeBinanceFuturesPosition
 } from "./lib.js";
 
 function getEnvAny(names) {
@@ -330,6 +333,108 @@ async function handle(req, res) {
           sendJson(res, 400, { error: "missing_env", env: m[1] }, cors);
         } else {
           sendJson(res, 200, { ok: false, error: "futures_unavailable", message: msg }, cors);
+        }
+      }
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/futures/positions") {
+      try {
+        const data = await listBinanceFuturesPositions();
+        sendJson(res, 200, data, cors);
+      } catch (e) {
+        const msg = e?.message ? String(e.message) : String(e);
+        const m = msg.match(/^missing_env:([A-Z0-9_]+)$/);
+        if (m) {
+          sendJson(res, 400, { error: "missing_env", env: m[1] }, cors);
+        } else {
+          sendJson(res, 200, { ok: false, error: "futures_unavailable", message: msg }, cors);
+        }
+      }
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/futures/order") {
+      try {
+        const body = (await readJsonBody(req)) ?? {};
+        const symbol = normalizeSymbol(body.symbol);
+        const timeframe = normalizeTimeframe(body.timeframe);
+        const candlesExchange = String(body.candlesExchange ?? process.env.FUTURES_CANDLES_EXCHANGE ?? "binanceusdm").trim();
+        if (!symbol) {
+          sendJson(res, 400, { error: "symbol_required" }, cors);
+          return;
+        }
+        if (!timeframe) {
+          sendJson(res, 400, { error: "timeframe_required" }, cors);
+          return;
+        }
+        const c = await fetchCandles({ exchange: candlesExchange, symbol, timeframe });
+        const signal = await buildSignal(c);
+        const guard = await evaluarGuardiaDeEntrada({ signal, candles: c.candles });
+        if (guard?.enabled && guard?.allow === false) {
+          sendJson(res, 400, { error: "blocked_by_guard", reasons: guard?.reasons ?? [] }, cors);
+          return;
+        }
+        const side = String(body.side ?? "").trim().toLowerCase();
+        const type = String(body.type ?? "market").trim().toLowerCase();
+        const notionalUsdt = body.notionalUsdt;
+        const amount = body.amount;
+        const price = body.price;
+        const leverage = body.leverage;
+        const reduceOnly = body.reduceOnly === true;
+        const clientId = body.clientId;
+        const data = await placeBinanceFuturesOrder({
+          symbol,
+          side,
+          type,
+          amount,
+          notionalUsdt,
+          price,
+          leverage,
+          reduceOnly,
+          clientId
+        });
+        sendJson(res, 200, { ...data, guard }, cors);
+      } catch (e) {
+        const msg = e?.message ? String(e.message) : String(e);
+        const m = msg.match(/^missing_env:([A-Z0-9_]+)$/);
+        if (m) {
+          sendJson(res, 400, { error: "missing_env", env: m[1] }, cors);
+        } else if (msg === "futures_trading_disabled") {
+          sendJson(res, 400, { error: "futures_trading_disabled" }, cors);
+        } else if (msg === "futures_trading_not_confirmed") {
+          sendJson(res, 400, { error: "futures_trading_not_confirmed" }, cors);
+        } else if (msg === "symbol_not_allowed") {
+          sendJson(res, 400, { error: "symbol_not_allowed" }, cors);
+        } else {
+          sendJson(res, 200, { ok: false, error: "futures_order_failed", message: msg }, cors);
+        }
+      }
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/futures/close") {
+      try {
+        const body = (await readJsonBody(req)) ?? {};
+        const symbol = normalizeSymbol(body.symbol);
+        if (!symbol) {
+          sendJson(res, 400, { error: "symbol_required" }, cors);
+          return;
+        }
+        const clientId = body.clientId;
+        const data = await closeBinanceFuturesPosition({ symbol, clientId });
+        sendJson(res, 200, data, cors);
+      } catch (e) {
+        const msg = e?.message ? String(e.message) : String(e);
+        const m = msg.match(/^missing_env:([A-Z0-9_]+)$/);
+        if (m) {
+          sendJson(res, 400, { error: "missing_env", env: m[1] }, cors);
+        } else if (msg === "futures_trading_disabled") {
+          sendJson(res, 400, { error: "futures_trading_disabled" }, cors);
+        } else if (msg === "futures_trading_not_confirmed") {
+          sendJson(res, 400, { error: "futures_trading_not_confirmed" }, cors);
+        } else {
+          sendJson(res, 200, { ok: false, error: "futures_close_failed", message: msg }, cors);
         }
       }
       return;

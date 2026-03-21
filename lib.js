@@ -2043,6 +2043,169 @@ export async function fetchBinanceFuturesSummary() {
   };
 }
 
+function envBool(name, def = "0") {
+  return !["0", "false", "off", "no"].includes(String(process.env[name] ?? def).trim().toLowerCase());
+}
+
+function envNum(name, def) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || String(raw).trim() === "") return def;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : def;
+}
+
+function parseCsvUpper(name) {
+  return String(process.env[name] ?? "")
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+}
+
+function requireFuturesTradingEnabled() {
+  const enabled = envBool("FUTURES_TRADING_ENABLED", "0");
+  if (!enabled) throw new Error("futures_trading_disabled");
+  const confirm = String(process.env.FUTURES_TRADING_CONFIRM ?? "").trim();
+  if (confirm !== "YES_I_UNDERSTAND") throw new Error("futures_trading_not_confirmed");
+}
+
+export async function listBinanceFuturesPositions() {
+  const ex = getBinanceFutures();
+  const raw = await ex.fapiPrivateGetPositionRisk();
+  const arr = Array.isArray(raw) ? raw : [];
+  const items = [];
+  for (const p of arr) {
+    const amt = Number(p?.positionAmt);
+    if (!Number.isFinite(amt) || Math.abs(amt) <= 0) continue;
+    items.push({
+      symbol: String(p?.symbol ?? ""),
+      positionAmt: amt,
+      entryPrice: Number(p?.entryPrice),
+      markPrice: Number(p?.markPrice),
+      unrealizedProfit: Number(p?.unRealizedProfit ?? p?.unrealizedProfit),
+      leverage: Number(p?.leverage),
+      liquidationPrice: Number(p?.liquidationPrice),
+      marginType: String(p?.marginType ?? ""),
+      isolatedMargin: Number(p?.isolatedMargin),
+      notional: Number(p?.notional)
+    });
+  }
+  return { ok: true, ts: new Date().toISOString(), items };
+}
+
+function normalizeFuturesSymbolInput(symbol) {
+  const s = String(symbol ?? "").trim().toUpperCase();
+  if (!s) return null;
+  if (s.includes("/")) return s;
+  if (s.endsWith("USDT") && !s.includes("/")) return `${s.slice(0, -4)}/USDT`;
+  return s;
+}
+
+export async function placeBinanceFuturesOrder({
+  symbol,
+  side,
+  type,
+  amount,
+  notionalUsdt,
+  price,
+  leverage,
+  reduceOnly,
+  clientId
+} = {}) {
+  requireFuturesTradingEnabled();
+  const ex = getBinanceFutures();
+  await ex.loadMarkets();
+
+  const symIn = normalizeFuturesSymbolInput(symbol);
+  if (!symIn) throw new Error("symbol_required");
+  const m = ex.markets ? resolveMarketSymbol(ex.markets, symIn) : null;
+  const sym = m || symIn;
+
+  const allow = parseCsvUpper("FUTURES_ALLOWED_SYMBOLS");
+  if (allow.length && !allow.includes(sym.toUpperCase())) throw new Error("symbol_not_allowed");
+
+  const s = String(side ?? "").trim().toLowerCase();
+  if (s !== "buy" && s !== "sell") throw new Error("side_invalid");
+  const t = String(type ?? "market").trim().toLowerCase();
+  if (!["market", "limit"].includes(t)) throw new Error("type_invalid");
+
+  const maxLev = Math.max(1, Math.min(125, Math.floor(envNum("FUTURES_MAX_LEVERAGE", 10))));
+  const levRaw = leverage === undefined || leverage === null ? envNum("FUTURES_DEFAULT_LEVERAGE", 3) : Number(leverage);
+  const lev = Number.isFinite(levRaw) ? Math.max(1, Math.min(maxLev, Math.floor(levRaw))) : 3;
+
+  const maxNotional = Math.max(1, envNum("FUTURES_MAX_NOTIONAL_USDT", 25));
+  const notionalRaw = notionalUsdt === undefined || notionalUsdt === null ? null : Number(notionalUsdt);
+
+  let qty = Number(amount);
+  if (!Number.isFinite(qty) || qty <= 0) {
+    if (!Number.isFinite(notionalRaw) || notionalRaw <= 0) throw new Error("amount_or_notional_required");
+    if (notionalRaw > maxNotional) throw new Error("notional_too_large");
+    const ticker = await ex.fetchTicker(sym);
+    const px = Number(ticker?.last ?? ticker?.close ?? ticker?.bid ?? ticker?.ask);
+    if (!Number.isFinite(px) || px <= 0) throw new Error("price_unavailable");
+    qty = notionalRaw / px;
+  }
+
+  if (!Number.isFinite(qty) || qty <= 0) throw new Error("amount_invalid");
+
+  const params = {};
+  if (reduceOnly === true) params.reduceOnly = true;
+  if (clientId) params.newClientOrderId = String(clientId).slice(0, 32);
+
+  if (typeof ex.setLeverage === "function") {
+    await ex.setLeverage(lev, sym);
+  } else {
+    await ex.fapiPrivatePostLeverage({ symbol: String(sym).replace("/", ""), leverage: lev });
+  }
+
+  const p = t === "limit" ? Number(price) : undefined;
+  if (t === "limit" && (!Number.isFinite(p) || p <= 0)) throw new Error("price_required");
+
+  const o = await ex.createOrder(sym, t, s, qty, p, params);
+  return {
+    ok: true,
+    ts: new Date().toISOString(),
+    symbol: sym,
+    side: s,
+    type: t,
+    amount: qty,
+    price: t === "limit" ? p : null,
+    reduceOnly: reduceOnly === true,
+    leverage: lev,
+    order: {
+      id: o?.id ?? null,
+      clientOrderId: o?.clientOrderId ?? null,
+      status: o?.status ?? null,
+      filled: o?.filled ?? null,
+      average: o?.average ?? null,
+      cost: o?.cost ?? null,
+      info: o?.info ?? null
+    }
+  };
+}
+
+export async function closeBinanceFuturesPosition({ symbol, clientId } = {}) {
+  requireFuturesTradingEnabled();
+  const ex = getBinanceFutures();
+  await ex.loadMarkets();
+  const symIn = normalizeFuturesSymbolInput(symbol);
+  if (!symIn) throw new Error("symbol_required");
+  const m = ex.markets ? resolveMarketSymbol(ex.markets, symIn) : null;
+  const sym = m || symIn;
+
+  const pos = await ex.fapiPrivateGetPositionRisk();
+  const arr = Array.isArray(pos) ? pos : [];
+  const targetId = String(sym).replace("/", "");
+  const p = arr.find((x) => String(x?.symbol ?? "") === targetId);
+  const amt = Number(p?.positionAmt);
+  if (!Number.isFinite(amt) || Math.abs(amt) <= 0) return { ok: true, ts: new Date().toISOString(), closed: false };
+  const side = amt > 0 ? "sell" : "buy";
+  const qty = Math.abs(amt);
+  const params = { reduceOnly: true };
+  if (clientId) params.newClientOrderId = String(clientId).slice(0, 32);
+  const o = await ex.createOrder(sym, "market", side, qty, undefined, params);
+  return { ok: true, ts: new Date().toISOString(), closed: true, orderId: o?.id ?? null };
+}
+
 export async function listSpotSymbols({ exchange, quote = "USDT", maxSymbols = 200 } = {}) {
   const ex = getExchange(exchange);
   const maxAttempts = Number.isFinite(Number(process.env.FETCH_RETRY_ATTEMPTS))
