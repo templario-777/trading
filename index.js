@@ -63,6 +63,7 @@ import {
   listFuturesShadowPositions,
   closeFuturesShadowPosition,
   setAutotradeFuturesStatus,
+  fetchBinanceFuturesTopSymbols,
   filtrarPorSabiduria,
   generarAutocritica,
   generar_balance_de_aprendizaje,
@@ -1367,28 +1368,65 @@ async function main() {
     const enabled = envBool("FUTURES_AUTOTRADE_ENABLED", "0");
     const testnet = envBool("BINANCE_FUTURES_TESTNET", "0");
     if (!enabled || !testnet) return;
-    const symbols = parseCsv("FUTURES_AUTOTRADE_SYMBOLS");
+    let symbols = parseCsv("FUTURES_AUTOTRADE_SYMBOLS");
     const timeframes = parseCsv("FUTURES_AUTOTRADE_TIMEFRAMES");
     const notionalUsdt = envNum("FUTURES_AUTOTRADE_NOTIONAL_USDT", 10);
     const leverage = envNum("FUTURES_AUTOTRADE_LEVERAGE", envNum("FUTURES_DEFAULT_LEVERAGE", 3));
     const candlesExchange = String(process.env.FUTURES_CANDLES_EXCHANGE ?? "binanceusdm").trim() || "binanceusdm";
     if (!symbols.length || !timeframes.length) return;
 
+    const allow = String(process.env.FUTURES_ALLOWED_SYMBOLS ?? "").trim();
+    const allowList = allow ? allow.split(",").map((s) => s.trim()).filter(Boolean) : [];
+
+    const autoMode = symbols.length === 1 && String(symbols[0]).trim().toUpperCase() === "AUTO";
+    if (autoMode) {
+      const maxSymbols = Math.max(1, Math.min(80, Math.floor(envNum("FUTURES_AUTOTRADE_MAX_SYMBOLS", 20))));
+      const minVol = envNum("FUTURES_AUTOTRADE_MIN_QUOTE_VOL", 50_000_000);
+      const top = await fetchBinanceFuturesTopSymbols({ quote: "USDT", limit: maxSymbols, minQuoteVolume: minVol }).catch(() => null);
+      const items = Array.isArray(top?.items) ? top.items : [];
+      symbols = items.map((x) => x.symbol);
+    }
+
+    if (allowList.length) {
+      const set = new Set(allowList.map((s) => String(s).trim().toUpperCase()));
+      symbols = symbols.filter((s) => set.has(String(s).trim().toUpperCase()));
+    }
+
+    const maxOpen = Math.max(1, Math.min(30, Math.floor(envNum("FUTURES_AUTOTRADE_MAX_OPEN", 3))));
+    const maxNew = Math.max(1, Math.min(10, Math.floor(envNum("FUTURES_AUTOTRADE_MAX_NEW_PER_CYCLE", 1))));
+    const cooldownMin = Math.max(0, Math.min(24 * 60, Math.floor(envNum("FUTURES_AUTOTRADE_COOLDOWN_MIN", 90))));
+    const cooldownMs = cooldownMin * 60_000;
+
     const openOnly = await listFuturesShadowPositions({ last: 200, openOnly: true }).catch(() => ({ items: [] }));
     const openItems = Array.isArray(openOnly?.items) ? openOnly.items : [];
+    if (openItems.length >= maxOpen) {
+      await setAutotradeFuturesStatus({
+        lastDecisionAt: Date.now(),
+        lastDecision: { action: "skip", reason: "max_open_reached", open: openItems.length, maxOpen }
+      }).catch(() => {});
+      return;
+    }
     const openKeys = new Set(openItems.map((p) => `${String(p?.symbol ?? "").trim()}|${String(p?.timeframe ?? "").trim()}`));
+
+    const mem = await loadMemory().catch(() => ({}));
+    const prevAuto = mem.autotradeFutures && typeof mem.autotradeFutures === "object" ? mem.autotradeFutures : {};
+    const prevCd = prevAuto.cooldowns && typeof prevAuto.cooldowns === "object" ? prevAuto.cooldowns : {};
 
     await setAutotradeFuturesStatus({
       enabled: true,
       testnet: true,
       lastRunAt: Date.now(),
-      watch: { symbols, timeframes, notionalUsdt, leverage, candlesExchange }
+      watch: { symbols: symbols.slice(0, 80), timeframes, notionalUsdt, leverage, candlesExchange, autoMode }
     }).catch(() => {});
 
+    let opened = 0;
     for (const symbol of symbols) {
       for (const timeframe of timeframes) {
+        if (opened >= maxNew) return;
         const key = `${String(symbol).trim()}|${String(timeframe).trim()}`;
         if (openKeys.has(key)) continue;
+        const lastOpenAt = Number(prevCd[key] ?? 0);
+        if (cooldownMs && Number.isFinite(lastOpenAt) && lastOpenAt > 0 && Date.now() - lastOpenAt < cooldownMs) continue;
         try {
           const data = await fetchCandles({ exchange: candlesExchange, symbol, timeframe });
           const signal = await buildSignal(data);
@@ -1442,6 +1480,9 @@ async function main() {
             lastDecisionAt: Date.now(),
             lastDecision: { symbol, timeframe, action: "open", side: signal.side, orderId: order?.order?.id ?? null }
           }).catch(() => {});
+          opened += 1;
+          const nextCd = { ...prevCd, [key]: Date.now() };
+          await setAutotradeFuturesStatus({ cooldowns: nextCd }).catch(() => {});
         } catch (e) {
           await setAutotradeFuturesStatus({
             lastDecisionAt: Date.now(),

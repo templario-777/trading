@@ -1988,6 +1988,13 @@ function sumIncome(items) {
   return sum;
 }
 
+function parseCsvUpper(name) {
+  return String(process.env[name] ?? "")
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+}
+
 export async function fetchBinanceFuturesSummary() {
   const ex = getBinanceFutures();
   const now = Date.now();
@@ -2054,13 +2061,6 @@ function envNum(name, def) {
   return Number.isFinite(n) ? n : def;
 }
 
-function parseCsvUpper(name) {
-  return String(process.env[name] ?? "")
-    .split(",")
-    .map((s) => s.trim().toUpperCase())
-    .filter(Boolean);
-}
-
 function requireFuturesTradingEnabled() {
   const enabled = envBool("FUTURES_TRADING_ENABLED", "0");
   if (!enabled) throw new Error("futures_trading_disabled");
@@ -2094,6 +2094,51 @@ export async function listBinanceFuturesPositions() {
     });
   }
   return { ok: true, ts: new Date().toISOString(), items };
+}
+
+export async function fetchBinanceFuturesTopSymbols({
+  quote = "USDT",
+  limit = 30,
+  minQuoteVolume = 50_000_000,
+  maxSymbols = 300
+} = {}) {
+  const ex = getBinanceFutures();
+  const q = String(quote ?? "USDT").trim().toUpperCase() || "USDT";
+  const lim = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(200, Math.floor(Number(limit)))) : 30;
+  const minVol = Number.isFinite(Number(minQuoteVolume)) ? Math.max(0, Number(minQuoteVolume)) : 50_000_000;
+  const cap = Number.isFinite(Number(maxSymbols)) ? Math.max(10, Math.min(1000, Math.floor(Number(maxSymbols)))) : 300;
+
+  const raw = await ex.fapiPublicGetTicker24hr();
+  const arr = Array.isArray(raw) ? raw : [];
+  const items = [];
+  for (const t of arr) {
+    const sym = String(t?.symbol ?? "").trim().toUpperCase();
+    if (!sym) continue;
+    if (!sym.endsWith(q)) continue;
+    if (sym.includes("_")) continue;
+    const base = sym.slice(0, -q.length);
+    if (!base) continue;
+    if (/(UP|DOWN|BEAR|BULL|3L|3S|5L|5S)$/i.test(base)) continue;
+    const quoteVol = Number(t?.quoteVolume);
+    if (Number.isFinite(quoteVol) && quoteVol < minVol) continue;
+    const last = Number(t?.lastPrice);
+    const changePct = Number(t?.priceChangePercent);
+    items.push({
+      symbol: `${base}/${q}`,
+      rawSymbol: sym,
+      lastPrice: Number.isFinite(last) ? last : null,
+      quoteVolume: Number.isFinite(quoteVol) ? quoteVol : null,
+      changePct: Number.isFinite(changePct) ? changePct : null
+    });
+  }
+  items.sort((a, b) => Number(b.quoteVolume ?? 0) - Number(a.quoteVolume ?? 0));
+  return {
+    ok: true,
+    ts: new Date().toISOString(),
+    quote: q,
+    total: Math.min(cap, items.length),
+    items: items.slice(0, Math.min(cap, items.length)).slice(0, lim)
+  };
 }
 
 function normalizeFuturesSymbolInput(symbol) {

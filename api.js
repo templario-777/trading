@@ -32,7 +32,8 @@ import {
   updatePaperPosition,
   placeBinanceFuturesOrder,
   closeBinanceFuturesPosition,
-  fetchFuturesTestnetEquity
+  fetchFuturesTestnetEquity,
+  fetchBinanceFuturesTopSymbols
 } from "./lib.js";
 
 function getEnvAny(names) {
@@ -390,6 +391,23 @@ async function handle(req, res) {
         sendJson(res, 200, data, cors);
       } catch (e) {
         sendJson(res, 200, { ok: false, error: "equity_unavailable", message: e?.message ?? String(e) }, cors);
+      }
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/futures/top") {
+      try {
+        const rawLimit = Number(url.searchParams.get("limit") ?? "30");
+        const limit = Number.isFinite(rawLimit) ? rawLimit : 30;
+        const rawMin = Number(url.searchParams.get("minQuoteVol") ?? "50000000");
+        const minQuoteVolume = Number.isFinite(rawMin) ? rawMin : 50_000_000;
+        const data = await fetchBinanceFuturesTopSymbols({ quote: "USDT", limit, minQuoteVolume });
+        sendJson(res, 200, data, cors);
+      } catch (e) {
+        const msg = e?.message ? String(e.message) : String(e);
+        const m = msg.match(/^missing_env:([A-Z0-9_]+)$/);
+        if (m) sendJson(res, 400, { error: "missing_env", env: m[1] }, cors);
+        else sendJson(res, 200, { ok: false, error: "top_unavailable", message: msg }, cors);
       }
       return;
     }

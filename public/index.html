@@ -497,6 +497,21 @@
               <div class="muted" id="aEqMsg"></div>
             </div>
             <div>
+              <div class="title">Mejores candidatos (volumen 24h)</div>
+              <div class="muted" id="aTopEmpty">Cargando...</div>
+              <table id="aTopTable" style="display: none">
+                <thead>
+                  <tr>
+                    <th>Symbol</th>
+                    <th>Vol (USDT)</th>
+                    <th>%</th>
+                    <th>Last</th>
+                  </tr>
+                </thead>
+                <tbody id="aTopBody"></tbody>
+              </table>
+            </div>
+            <div>
               <div class="title">Posiciones (sombra)</div>
               <div class="muted" id="aPosEmpty">Cargando...</div>
               <table id="aPosTable" style="display: none">
@@ -571,6 +586,9 @@
       const aReason = $("aReason");
       const aEqChart = $("aEqChart");
       const aEqMsg = $("aEqMsg");
+      const aTopEmpty = $("aTopEmpty");
+      const aTopTable = $("aTopTable");
+      const aTopBody = $("aTopBody");
       const aPosEmpty = $("aPosEmpty");
       const aPosTable = $("aPosTable");
       const aPosBody = $("aPosBody");
@@ -993,6 +1011,9 @@
         aEqMsg.textContent = "";
         aEqChart.style.display = "none";
         aEqChart.removeAttribute("src");
+        aTopEmpty.textContent = "Cargando...";
+        aTopTable.style.display = "none";
+        aTopBody.innerHTML = "";
         aPosEmpty.textContent = "Cargando...";
         aPosTable.style.display = "none";
         aPosBody.innerHTML = "";
@@ -1023,6 +1044,36 @@
           }
         } catch (e) {
           aEqMsg.textContent = isUnauthorized(e) ? "Equity: no autorizado." : "Equity: error.";
+        }
+        try {
+          const top = await api("/api/futures/top?limit=20&minQuoteVol=50000000");
+          const items = Array.isArray(top?.items) ? top.items : [];
+          if (!items.length) {
+            aTopEmpty.textContent = "Sin datos.";
+          } else {
+            aTopEmpty.textContent = "";
+            aTopTable.style.display = "";
+            for (const it of items) {
+              const tr = document.createElement("tr");
+              const vol = Number(it?.quoteVolume);
+              const pct = Number(it?.changePct);
+              const last = Number(it?.lastPrice);
+              const cells = [
+                it?.symbol ?? "",
+                Number.isFinite(vol) ? Math.round(vol).toLocaleString("en-US") : "",
+                Number.isFinite(pct) ? `${pct.toFixed(2)}%` : "",
+                Number.isFinite(last) ? last.toFixed(6) : ""
+              ];
+              for (const c of cells) {
+                const td = document.createElement("td");
+                td.textContent = c === null || c === undefined ? "" : String(c);
+                tr.appendChild(td);
+              }
+              aTopBody.appendChild(tr);
+            }
+          }
+        } catch (e) {
+          aTopEmpty.textContent = isUnauthorized(e) ? "No autorizado. Pega tu TRADING_BOT_API_KEY arriba." : "Error cargando candidatos.";
         }
         try {
           const p = await api("/api/futures/shadow?last=60");
