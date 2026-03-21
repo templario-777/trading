@@ -316,9 +316,10 @@ async function handle(req, res) {
       let token = getBearerToken(req);
       token = token ? String(token).trim() : "";
       if (token.startsWith("\"") && token.endsWith("\"") && token.length >= 2) token = token.slice(1, -1);
-      const wisdom = await readWisdomEntries({ last: 1 }).catch(() => ({ total: 0 }));
+      
       const sshHost = String(process.env.SSH_HOST ?? "161.35.107.114").trim();
       const sshUser = String(process.env.SSH_USER ?? "root").trim();
+      
       sendJson(
         res,
         200,
@@ -327,10 +328,6 @@ async function handle(req, res) {
           ts: new Date().toISOString(),
           deepseekKey,
           apiKeyEnabled,
-          wisdomTotal: Number(wisdom?.total) || 0,
-          authHeaderPresent: Boolean(rawAuth),
-          authTokenLen: token ? token.length : 0,
-          keyLen: key ? key.length : 0,
           authorized: Boolean(token) && token === key,
           sshTarget: `${sshUser}@${sshHost}`,
           globalBrain: "connected"
