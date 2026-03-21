@@ -1145,54 +1145,52 @@
         try {
           const m = await api("/api/meta");
           
-          $("healthVal").textContent = "OK";
-          $("healthVal").className = "font-medium text-ok";
-          $("statusDot").className = "w-2 h-2 rounded-full bg-ok";
+          if (m.ok) {
+            $("healthVal").textContent = "OK";
+            $("healthVal").className = "font-medium text-ok";
+            $("statusDot").className = "w-2 h-2 rounded-full bg-ok";
 
-          if (m.authorized) {
-            $("authVal").textContent = "OK";
-            $("authVal").className = "font-medium text-ok";
-          } else {
-            $("authVal").textContent = "KEY ERROR";
-            $("authVal").className = "font-medium text-danger";
-          }
-          
-          if (m.globalBrain === "connected") {
-            $("brainVal").textContent = "GLOBAL";
-            $("brainVal").className = "font-medium text-accent italic";
-          }
-          
-          if (m.sshTarget) {
-            $("sshTargetVal").textContent = m.sshTarget;
-          }
-
-          // SSH & VPS Status
-          try {
-            const ssh = await api("/api/ssh/status");
-            if (ssh.ok) {
-              $("sshVal").textContent = "CONNECTED";
-              $("sshVal").className = "text-ok";
-              $("vpsStats").classList.remove('hidden');
-              // Format uptime
-              let uptimeStr = ssh.output || "—";
-              if (uptimeStr.includes("up")) {
-                uptimeStr = uptimeStr.split("up")[1].split(",")[0].trim();
-              }
-              $("vpsUptime").textContent = uptimeStr;
+            if (m.authorized) {
+              $("authVal").textContent = "OK";
+              $("authVal").className = "font-medium text-ok";
             } else {
-              $("sshVal").textContent = "ERROR";
-              $("sshVal").className = "text-warn";
+              $("authVal").textContent = "KEY ERROR";
+              $("authVal").className = "font-medium text-danger";
             }
-          } catch (sshErr) {
-            $("sshVal").textContent = "DISCONNECTED";
-            $("sshVal").className = "text-danger";
+            
+            if (m.globalBrain === "connected") {
+              $("brainVal").textContent = "GLOBAL";
+              $("brainVal").className = "font-medium text-accent italic";
+            }
+            
+            if (m.sshTarget) {
+              $("sshTargetVal").textContent = m.sshTarget;
+            }
+
+            // SSH & VPS Status
+            try {
+              const ssh = await api("/api/ssh/status");
+              if (ssh.ok) {
+                $("sshVal").textContent = "CONNECTED";
+                $("sshVal").className = "text-ok";
+                $("vpsStats").classList.remove('hidden');
+                // Format uptime
+                let uptimeStr = ssh.output || "—";
+                if (uptimeStr.includes("up")) {
+                  uptimeStr = uptimeStr.split("up")[1].split(",")[0].trim();
+                }
+                $("vpsUptime").textContent = uptimeStr;
+              } else {
+                $("sshVal").textContent = "ERROR";
+                $("sshVal").className = "text-warn";
+              }
+            } catch (sshErr) {
+              $("sshVal").textContent = "DISCONNECTED";
+              $("sshVal").className = "text-danger";
+            }
           }
         } catch (e) {
-          // If meta fails completely (e.g. 401 or network error)
-          $("healthVal").textContent = "OFFLINE";
-          $("healthVal").className = "font-medium text-danger";
-          $("statusDot").className = "w-2 h-2 rounded-full bg-danger animate-pulse";
-
+          // If meta fails (network or other error), only update Auth status
           if (e.status === 401) {
             $("authVal").textContent = "UNAUTHORIZED";
           } else {
