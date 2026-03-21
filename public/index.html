@@ -668,19 +668,26 @@
 
       // API Core
       async function api(path, opts = {}) {
-        let token = apiKeyInput.value.trim() || storage.get("bot_api_key") || "AETHER_2026";
+        let token = apiKeyInput.value.trim();
         
-        if (apiKeyInput.value !== token && token !== "AETHER_2026") {
-          apiKeyInput.value = token;
+        // If the user hasn't typed anything, try saved key or default
+        if (!token) {
+          token = storage.get("bot_api_key") || "AETHER_2026";
         }
-        if (token && token !== "AETHER_2026") storage.set("bot_api_key", token);
+        
+        // Save to storage if it's a non-default key
+        if (token && token !== "AETHER_2026") {
+          storage.set("bot_api_key", token);
+          // If the input was empty but we found a saved key, show it
+          if (!apiKeyInput.value) apiKeyInput.value = token;
+        }
 
         try {
           const res = await fetch(path, {
             method: opts.method || "GET",
             headers: {
               "content-type": "application/json",
-              ...(token ? { "authorization": `Bearer ${token}` } : {})
+              "authorization": `Bearer ${token}`
             },
             body: opts.body ? JSON.stringify(opts.body) : undefined
           });
@@ -1122,13 +1129,20 @@
           $("healthVal").textContent = "OFF";
           $("healthVal").className = "font-medium text-danger";
           $("statusDot").className = "w-2 h-2 rounded-full bg-danger animate-pulse";
+          console.warn("Monitor Health Error:", e.message);
         }
 
         // Meta/Auth check (Needs Auth)
         try {
           const m = await api("/api/meta");
-          $("authVal").textContent = m.authorized ? "OK" : "ERROR";
-          $("authVal").className = `font-medium ${m.authorized ? 'text-ok' : 'text-danger'}`;
+          
+          if (m.authorized) {
+            $("authVal").textContent = "OK";
+            $("authVal").className = "font-medium text-ok";
+          } else {
+            $("authVal").textContent = "KEY ERROR";
+            $("authVal").className = "font-medium text-danger";
+          }
           
           if (m.globalBrain === "connected") {
             $("brainVal").textContent = "GLOBAL";
@@ -1152,13 +1166,19 @@
               $("sshVal").textContent = "ERROR";
               $("sshVal").className = "text-warn";
             }
-          } catch {
+          } catch (sshErr) {
             $("sshVal").textContent = "DISCONNECTED";
             $("sshVal").className = "text-danger";
           }
         } catch (e) {
-          $("authVal").textContent = "ERROR";
+          // If meta fails completely (e.g. 401 or network error)
+          if (e.status === 401) {
+            $("authVal").textContent = "UNAUTHORIZED";
+          } else {
+            $("authVal").textContent = "OFFLINE";
+          }
           $("authVal").className = "font-medium text-danger";
+          console.warn("Monitor Meta Error:", e.message);
         }
       }
 

@@ -252,13 +252,18 @@ function isAuthorized(req) {
     String(process.env.TRADING_BOT_API_ALLOW_NO_AUTH ?? "").trim().toLowerCase()
   );
   if (allowNoAuth && isLocalRequest(req)) return true;
+  
   const keyRaw = getEnvAny(["TRADING_BOT_API_KEY"]) || "AETHER_2026";
   let key = String(keyRaw).trim();
   if (key.startsWith("\"") && key.endsWith("\"") && key.length >= 2) key = key.slice(1, -1);
+  
   let token = getBearerToken(req);
-  token = token ? String(token).trim() : null;
-  if (token && token.startsWith("\"") && token.endsWith("\"") && token.length >= 2) token = token.slice(1, -1);
-  return Boolean(token) && token === key;
+  if (!token) return false;
+  
+  token = String(token).trim();
+  if (token.startsWith("\"") && token.endsWith("\"") && token.length >= 2) token = token.slice(1, -1);
+  
+  return token === key;
 }
 
 async function handle(req, res) {
@@ -978,7 +983,7 @@ async function handle(req, res) {
 async function main() {
   const portRaw = Number(getEnvAny(["TRADING_BOT_API_PORT"]) ?? 8787);
   const port = Number.isFinite(portRaw) ? Math.max(1, Math.min(65535, Math.floor(portRaw))) : 8787;
-  const host = String(getEnvAny(["TRADING_BOT_API_HOST"]) ?? "127.0.0.1").trim() || "127.0.0.1";
+  const host = String(getEnvAny(["TRADING_BOT_API_HOST"]) ?? "0.0.0.0").trim() || "0.0.0.0";
 
   const server = http.createServer((req, res) => {
     handle(req, res).catch((e) => {
