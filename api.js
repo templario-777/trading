@@ -157,7 +157,28 @@ async function handle(req, res) {
     if (req.method === "GET" && path === "/api/meta") {
       const deepseekKey = Boolean(getEnvAny(["DEEPSEEK_KEY", "DEEPSEEK_API_KEY"]));
       const apiKeyEnabled = Boolean(getEnvAny(["TRADING_BOT_API_KEY"])) && !isLocalRequest(req);
-      sendJson(res, 200, { ok: true, ts: new Date().toISOString(), deepseekKey, apiKeyEnabled }, cors);
+      const rawAuth = String(req.headers.authorization ?? "").trim();
+      let key = getEnvAny(["TRADING_BOT_API_KEY"]);
+      key = key ? String(key).trim() : "";
+      if (key.startsWith("\"") && key.endsWith("\"") && key.length >= 2) key = key.slice(1, -1);
+      let token = getBearerToken(req);
+      token = token ? String(token).trim() : "";
+      if (token.startsWith("\"") && token.endsWith("\"") && token.length >= 2) token = token.slice(1, -1);
+      sendJson(
+        res,
+        200,
+        {
+          ok: true,
+          ts: new Date().toISOString(),
+          deepseekKey,
+          apiKeyEnabled,
+          authHeaderPresent: Boolean(rawAuth),
+          authTokenLen: token ? token.length : 0,
+          keyLen: key ? key.length : 0,
+          authorized: Boolean(token) && token === key
+        },
+        cors
+      );
       return;
     }
 
