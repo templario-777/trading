@@ -1124,18 +1124,19 @@
 
       // Background Monitoring
       async function monitor() {
-        // Health check
+        // Health check (No Auth needed)
         try {
           const h = await api("/api/health");
           if (h && h.ok) {
-            $("healthVal").textContent = "OK";
+            $("healthVal").textContent = "ONLINE";
             $("healthVal").className = "font-medium text-ok";
-            $("statusDot").className = "w-2 h-2 rounded-full bg-ok animate-pulse";
+            $("statusDot").className = "w-2 h-2 rounded-full bg-ok";
           } else {
             throw new Error("health_not_ok");
           }
         } catch (e) {
-          $("healthVal").textContent = "OFFLINE";
+          const errStatus = e.status || "ERR";
+          $("healthVal").textContent = `OFFLINE (${errStatus})`;
           $("healthVal").className = "font-medium text-danger";
           $("statusDot").className = "w-2 h-2 rounded-full bg-danger animate-pulse";
           console.warn("Monitor Health Error:", e.message);
@@ -1145,13 +1146,14 @@
         try {
           const m = await api("/api/meta");
           
-          if (m.ok) {
-            $("healthVal").textContent = "OK";
+          if (m && m.ok) {
+            // Health is confirmed if meta works
+            $("healthVal").textContent = "ONLINE";
             $("healthVal").className = "font-medium text-ok";
             $("statusDot").className = "w-2 h-2 rounded-full bg-ok";
 
             if (m.authorized) {
-              $("authVal").textContent = "OK";
+              $("authVal").textContent = "AUTHORIZED";
               $("authVal").className = "font-medium text-ok";
             } else {
               $("authVal").textContent = "KEY ERROR";
@@ -1170,7 +1172,7 @@
             // SSH & VPS Status
             try {
               const ssh = await api("/api/ssh/status");
-              if (ssh.ok) {
+              if (ssh && ssh.ok) {
                 $("sshVal").textContent = "CONNECTED";
                 $("sshVal").className = "text-ok";
                 $("vpsStats").classList.remove('hidden');
