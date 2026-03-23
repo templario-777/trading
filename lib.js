@@ -393,6 +393,59 @@ export async function readWisdomEntries({ last = 3 } = {}) {
   }
 }
 
+export async function consolidateAetherKnowledge() {
+  const files = [
+    { name: "SABIDURIA_EVOLUTIVA.md", path: SABIDURIA_EVOLUTIVA_PATH },
+    { name: "BALANCE_APRENDIZAJE.md", path: DAILY_BALANCE_PATH },
+    { name: "LOG_APRENDIZAJE.md", path: LEARNING_LOG_PATH },
+    { name: "CEREBRO_OBSIDIAN.md", path: OBSIDIAN_BRAIN_PATH }
+  ];
+
+  let fullMarkdown = "# BASE DE CONOCIMIENTOS AETHER - CONEXIÓN NOTEBOOKLM\n\n";
+  fullMarkdown += `Generado el: ${new Date().toISOString()}\n\n`;
+  fullMarkdown += "Este documento consolida toda la inteligencia evolutiva del bot para su análisis en NotebookLM.\n\n---\n\n";
+
+  for (const f of files) {
+    try {
+      const content = await fs.readFile(f.path, "utf8");
+      if (content.trim()) {
+        fullMarkdown += `\n# ARCHIVO: ${f.name}\n\n${content}\n\n---\n\n`;
+      }
+    } catch {
+      // Si el archivo no existe, simplemente lo saltamos
+    }
+  }
+
+  // INCLUIR SEÑALES RASTREADAS (Aprendizaje Continuo)
+  try {
+    const mem = await loadMemory();
+    const tracked = Array.isArray(mem.trackedSignals) ? mem.trackedSignals : [];
+    if (tracked.length > 0) {
+      fullMarkdown += "\n# SEÑALES RASTREADAS (APRENDIZAJE CONTINUO)\n\n";
+      fullMarkdown += "| Fecha | Símbolo | Lado | Entrada | Estado | Resultado | Bloqueo |\n";
+      fullMarkdown += "|-------|---------|------|---------|--------|-----------|---------|\n";
+      
+      tracked.slice().reverse().forEach(s => {
+        const date = new Date(s.trackedAt).toLocaleString();
+        const res = s.r ? (s.r > 0 ? '+' : '') + s.r.toFixed(2) + 'R' : '—';
+        const blocked = (s.guardReasons && s.guardReasons.length > 0) ? "BLOQUEADO" : "PERMITIDO";
+        fullMarkdown += `| ${date} | ${s.symbol} | ${s.side} | ${s.entry} | ${s.status} | ${res} | ${blocked} |\n`;
+      });
+      fullMarkdown += "\n---\n\n";
+    }
+  } catch (e) {
+    console.error("Error consolidando señales rastreadas:", e);
+  }
+
+  // También incluimos un resumen de estadísticas si existe
+  try {
+    const stats = await fs.readFile(DAILY_STATS_PATH, "utf8");
+    fullMarkdown += `\n# ESTADÍSTICAS RECIENTES (JSON)\n\n\`\`\`json\n${stats}\n\`\`\`\n\n---\n\n`;
+  } catch {}
+
+  return fullMarkdown;
+}
+
 export async function readWisdomEntriesAll() {
   if (Date.now() - wisdomCache.at < WISDOM_CACHE_MS && wisdomCache.entries.length) {
     return {
@@ -636,6 +689,95 @@ export async function learnFromLossWithDeepseek({ apiKey, trade, signal, extraNo
   return { enabled: true, ok: Boolean(blocks.length), titulo };
 }
 
+export async function analyzeMemeWithAI({ tokenSymbol }) {
+  if (!tokenSymbol) return null;
+  
+  // Usar la clave de Deepseek del entorno
+  const deepseekKey = process.env.DEEPSEEK_KEY || process.env.DEEPSEEK_API_KEY;
+  if (!deepseekKey) {
+    console.error("Falta la clave DEEPSEEK_KEY en el entorno");
+    return null;
+  }
+  
+  // 1. Obtener datos reales de mercado (si están disponibles en el bot)
+  const topSymbols = await fetchBinanceFuturesTopSymbols().catch(() => ({ items: [] }));
+  const marketData = topSymbols.items.find(it => it.symbol.includes(tokenSymbol.toUpperCase())) || null;
+  
+  // 2. Construir el prompt para la IA "Cazadora de Memes"
+  const prompt = [
+    "ACTÚA COMO UN ANALISTA DE ÉLITE DE MEMECOINS CON ACCESO A DATOS DE ALGORITMOS DE MERCADO.",
+    `TOKEN A ANALIZAR: ${tokenSymbol}`,
+    marketData ? `DATOS REALES: Precio=${marketData.lastPrice}, Cambio24h=${marketData.priceChangePercent}%, Vol=${marketData.quoteVolume}` : "DATOS: Token nuevo o fuera de Binance Top.",
+    "",
+    "TU TAREA:",
+    "1. Diagnostica si es un 'PUMP ALGORÍTMICO' (manipulado) o 'CRECIMIENTO ORGÁNICO'.",
+    "2. Predice el POTENCIAL DE SUBIDA (ej: 2x, 5x, 10x) basado en el patrón actual.",
+    "3. Determina el TIEMPO DE TRADE (ej: 'Salir en 15 min', 'Hold 3 días').",
+    "4. Da un veredicto final: HOLD, TRADE o AVOID.",
+    "",
+    "Responde en JSON puro con este formato:",
+    "{",
+    "  \"seguridad\": { \"score\": 0-100, \"liq\": \"estado\", \"tax\": \"0%/0%\", \"holders\": \"distribución\" },",
+    "  \"algoritmo\": { \"score\": 0-100, \"velocidad\": \"lenta/media/extrema\", \"smart_money\": \"si/no\", \"social\": \"sentimiento\" },",
+    "  \"prediccion\": { \"veredicto\": \"HOLD/TRADE/AVOID\", \"target\": \"+200%\", \"tiempo\": \"2 horas\", \"riesgo\": \"alto/medio\" },",
+    "  \"razon\": \"explicación detallada del patrón detectado\"",
+    "}"
+  ].join("\n");
+
+  try {
+    const aiResponse = await consultDeepseek({ apiKey: deepseekKey, promptText: prompt, temperature: 0.7 });
+    return aiResponse;
+  } catch (e) {
+    console.error("Error en analyzeMemeWithAI:", e);
+    return null;
+  }
+}
+
+export async function learnFromUserFeedback({ apiKey, feedbackText }) {
+  if (!apiKey || !feedbackText) return null;
+  const prompt = [
+    "ACTÚA COMO UN CAZADOR DE MEMECOINS Y EXPERTO EN ALGORITMOS DE PUMP & DUMP.",
+    "OBJETIVO: Identificar si una moneda volátil es para TRADE rápido (minutos) o HOLD (comunidad real).",
+    "",
+    "INSTRUCCIONES:",
+    "1. Analiza la velocidad del precio y el volumen para detectar el algoritmo de PUMP.",
+    "2. Identifica señales de RUG PULL (liquidez bloqueada, carteras de ballenas).",
+    "3. Decide la estrategia: TRADE (aprovechar el fomo y salir) o HOLD (suelo de diamante).",
+    "",
+    `FEEDBACK DEL USUARIO: "${feedbackText}"`,
+    "",
+    "Devuelve JSON con:",
+    "- categoria: (MEME_PUMP|RUG_PULL_ALERT|DIAMOND_HANDS)",
+    "- recomendacion: (TRADE_FAST|HOLD_MEME|AVOID_NOW)",
+    "- titulo: Nombre viral de la lección",
+    "- leccion: Análisis del algoritmo de movimiento detectado",
+    "- regla: Instrucción para ganar (ej: 'VENDER si el volumen cae 20% en 1m')",
+    "- accion_futura: Qué buscar en la próxima moneda volátil"
+  ].join("\n");
+
+  try {
+    const ai = await consultDeepseek({ apiKey, promptText: prompt });
+    const titulo = String(ai?.titulo ?? "").trim() || `Feedback-Usuario: ${feedbackText.slice(0, 30)}...`;
+    const blocks = [];
+    if (ai?.leccion) blocks.push(`Lección: ${ai.leccion}`);
+    if (ai?.regla) blocks.push(`Regla: ${ai.regla}`);
+    if (ai?.accion_futura) blocks.push(`Acción: ${ai.accion_futura}`);
+
+    if (blocks.length) {
+      const rec = ai?.recomendacion ? `[MEME_REC: ${ai.recomendacion}] ` : "";
+      await appendWisdomEntry({
+        title: rec + titulo,
+        blocks,
+        meta: { source: "memecoin_hunter", recommendation: ai?.recomendacion }
+      });
+      return ai;
+    }
+  } catch (e) {
+    console.error("Error aprendiendo de feedback:", e);
+  }
+  return null;
+}
+
 export async function learnFromTradeWithDeepseek({ apiKey, trade, signal, context } = {}) {
   if (!BRAIN_AI_ENABLED) return { enabled: false };
   const key = String(apiKey ?? "").trim();
@@ -654,13 +796,15 @@ export async function learnFromTradeWithDeepseek({ apiKey, trade, signal, contex
 
   const ctx = context && typeof context === "object" ? context : {};
   const ctxText = toSafeLogText(ctx).slice(0, 1800);
+  const isLoss = Number(t.r) < 0 || String(t.reason ?? t.motivo ?? "").toUpperCase() === "SL";
   const prompt = [
-    "Eres un analista de performance de trading. Responde en JSON puro.",
+    "Eres un analista de performance de trading experto. Responde en JSON puro.",
     "OBJETIVO: Extraer lecciones accionables y reglas que eviten repetir errores y refuercen lo que funciona.",
     "REGLAS:",
     "- Si fue trade ganador, explica por qué funcionó y qué condiciones repetir.",
-    "- Si fue trade perdedor, explica el fallo y propone una regla corta tipo NO OPERAR / EVITAR / ESPERAR / AJUSTAR.",
+    "- Si fue trade perdedor o no llegó al profit, analiza EXACTAMENTE qué faltó (volumen, tendencia contraria, manipulación, RSI extremo).",
     "- Si fue trade perdedor, la regla DEBE empezar con NO OPERAR o EVITAR e incluir SIMBOLO y TIMEFRAME.",
+    "- Si fue una señal rastreada bloqueada por el guardia que TERMINÓ EN PROFIT, analiza por qué el guardia se equivocó.",
     "- Sé concreto, corto, sin teoría.",
     "",
     `SIMBOLO: ${symbol}`,
@@ -1240,22 +1384,24 @@ export async function generarReporteSemanal({ now, days } = {}) {
 
 export async function loadMemory() {
   const raw = await readJsonFileSafe(MEMORY_FILE);
-  if (!raw) return { trades: [], positions: [], stats: {}, strategyStats: {}, config: { alerts: {}, aiStats: {}, bot: {} } };
+  if (!raw) return { trades: [], positions: [], trackedSignals: [], stats: {}, strategyStats: {}, config: { alerts: {}, aiStats: {}, bot: {} } };
   const trades = Array.isArray(raw.trades) ? raw.trades : [];
   const positions = Array.isArray(raw.positions) ? raw.positions : [];
+  const trackedSignals = Array.isArray(raw.trackedSignals) ? raw.trackedSignals : [];
   const stats = raw.stats && typeof raw.stats === "object" ? raw.stats : {};
   const strategyStats = raw.strategyStats && typeof raw.strategyStats === "object" ? raw.strategyStats : {};
   const config = raw.config && typeof raw.config === "object" ? raw.config : { alerts: {} };
   config.alerts = config.alerts && typeof config.alerts === "object" ? config.alerts : {};
   config.aiStats = config.aiStats && typeof config.aiStats === "object" ? config.aiStats : {};
   config.bot = config.bot && typeof config.bot === "object" ? config.bot : {};
-  return { trades, positions, stats, strategyStats, config };
+  return { trades, positions, trackedSignals, stats, strategyStats, config };
 }
 
 export async function saveMemory(mem) {
   const safe = {
     trades: Array.isArray(mem?.trades) ? mem.trades.slice(-MAX_MEMORY_TRADES) : [],
     positions: Array.isArray(mem?.positions) ? mem.positions : [],
+    trackedSignals: Array.isArray(mem?.trackedSignals) ? mem.trackedSignals.slice(-500) : [],
     stats: mem?.stats && typeof mem.stats === "object" ? mem.stats : {},
     strategyStats: mem?.strategyStats && typeof mem.strategyStats === "object" ? mem.strategyStats : {},
     config: mem?.config && typeof mem.config === "object" ? mem.config : { alerts: {} }
@@ -1677,8 +1823,14 @@ export async function generar_balance_de_aprendizaje({ date } = {}) {
   const mem = await loadMemory();
   const trades = Array.isArray(mem.trades) ? mem.trades : [];
   const closedToday = trades.filter((t) => isoDateFromTs(t?.closedAt) === today);
-  const nToday = closedToday.length;
-  const winsToday = closedToday.filter((t) => Number.isFinite(Number(t?.r)) && Number(t.r) > 0).length;
+  
+  // Incluir señales rastreadas que cerraron hoy
+  const trackedSignals = Array.isArray(mem.trackedSignals) ? mem.trackedSignals : [];
+  const trackedClosedToday = trackedSignals.filter(s => s.status !== "TRACKING" && isoDateFromTs(s.closedAt) === today);
+  
+  const allResults = [...closedToday, ...trackedClosedToday];
+  const nToday = allResults.length;
+  const winsToday = allResults.filter((t) => Number.isFinite(Number(t?.r)) && Number(t.r) > 0).length;
   const winRateToday = nToday ? winsToday / nToday : 0;
 
   const stats = await loadDailyStats();
@@ -1819,6 +1971,8 @@ function computeRMultiple(side, entry, sl, exit) {
   if (side === "SHORT") return (entry - exit) / risk;
   return null;
 }
+
+export { computeRMultiple };
 
 export function adaptiveConfidenceMultiplier(statsEntry) {
   if (!statsEntry) return 1;
@@ -3480,14 +3634,30 @@ export async function evaluarGuardiaDeEntrada({ chatId, signal, candles, headlin
     reasons.push(`Posible whale trap: score ${formatNumber(trapScore, 2)}.`);
   }
 
+  // PREVISIÓN DE CAÍDAS (FLASH DROP)
+  const flash = detectFlashDrop({ candles, window: 5, thresholdPct: 1.2 });
+  if (flash.drop && side === "LONG") {
+    reasons.push(`Previsión de caída: ${flash.msg}`);
+  }
+
   const wisdomGuardEnabled = !["0", "false", "off", "no"].includes(
     String(process.env.WISDOM_GUARD_ENABLED ?? "1").trim().toLowerCase()
   );
   if (wisdomGuardEnabled) {
     try {
-      const w = await readWisdomEntries({ last: 20 });
+      const w = await readWisdomEntries({ last: 30 });
       const blk = evaluarBloqueoPorSabiduria({ signal: s, wisdomEntries: w.entries });
-      if (blk?.block) reasons.push(`Bloqueado por sabiduría: ${String(blk.excerpt ?? "").trim()}`);
+      if (blk?.block) {
+        reasons.push(`Bloqueado por sabiduría aprendida: ${String(blk.excerpt ?? "").trim()}`);
+      }
+      
+      // REGLA DE ORO: Si hubo una pérdida reciente reportada por el usuario, subir la exigencia
+      const hasRecentFeedbackLoss = w.entries.some(e => e.meta?.source === "user_feedback" && (Date.now() - e.timestamp < 3600_000 * 6));
+      if (hasRecentFeedbackLoss && reasons.length === 0) {
+        if (Number(s?.model?.confidence) < 0.75) {
+          reasons.push("Modo Máxima Seguridad (Post-Pérdida): Se requiere confianza > 0.75.");
+        }
+      }
     } catch {
     }
   }
@@ -3749,6 +3919,44 @@ export function runSelfTest() {
   const a = atr(candles, 3);
   if (!Number.isFinite(lastFinite(a))) throw new Error("ATR last not finite");
   return { ok: true };
+}
+
+export async function trackSignal(signal) {
+  if (!signal || signal.side === "NEUTRAL") return null;
+  const mem = await loadMemory();
+  mem.trackedSignals = Array.isArray(mem.trackedSignals) ? mem.trackedSignals : [];
+  
+  // No duplicar señales para el mismo par y TF en los últimos 5 minutos
+  const now = Date.now();
+  const exists = mem.trackedSignals.some(s => 
+    s.symbol === signal.symbol && 
+    s.timeframe === signal.timeframe && 
+    (now - s.trackedAt) < 300_000
+  );
+  if (exists) return null;
+
+  const id = `ts_${now}_${Math.random().toString(16).slice(2)}`;
+  const tracked = {
+    id,
+    exchange: signal.exchange,
+    symbol: signal.symbol,
+    timeframe: signal.timeframe,
+    side: signal.side,
+    entry: signal.entry,
+    sl: signal.sl,
+    tp: signal.tp2 ?? signal.tp,
+    tp1: signal.tp1 ?? null,
+    tp2: signal.tp2 ?? signal.tp ?? null,
+    indicators: signal.indicators,
+    model: signal.model,
+    status: "TRACKING",
+    trackedAt: now,
+    guardReasons: signal.guardReasons || []
+  };
+  
+  mem.trackedSignals.push(tracked);
+  await saveMemory(mem);
+  return tracked;
 }
 
 export async function openPaperPosition({
@@ -4169,6 +4377,7 @@ export async function scanSignals({
         try {
           const data = await fetchCandles({ exchange, symbol, timeframe });
           const signal = await buildSignal(data);
+          await trackSignal(signal).catch(() => {});
           ok += 1;
           return signal;
         } catch {
@@ -4227,6 +4436,7 @@ export async function scanSignalsParallel(symbolsOrOpts, timeframe, limit = 100)
           try {
             const data = await fetchCandles({ exchange: DEFAULT_EXCHANGE, symbol, timeframe: tf, limit });
             const signal = await buildSignal(data);
+            await trackSignal(signal).catch(() => {});
             ok += 1;
             return signal;
           } catch {
@@ -4378,6 +4588,34 @@ export function detectWhaleTrap({ candles, side, window = 60 } = {}) {
       bodyRatio
     }
   };
+}
+
+export function detectFlashDrop({ candles, window = 5, thresholdPct = 1.2 }) {
+  const arr = Array.isArray(candles) ? candles : [];
+  if (arr.length < window) return { drop: false, pct: 0 };
+  
+  const last = Number(arr[arr.length - 1]?.[4]);
+  const prev = Number(arr[arr.length - 1 - window]?.[4]);
+  const volLast = Number(arr[arr.length - 1]?.[5]);
+  
+  // Calcular volumen promedio para detectar spikes
+  const recentVols = arr.slice(-10).map(c => Number(c[5]));
+  const avgVol = recentVols.reduce((a, b) => a + b, 0) / recentVols.length;
+  const volSpike = volLast > avgVol * 2.5;
+
+  if (!Number.isFinite(last) || !Number.isFinite(prev) || prev <= 0) return { drop: false, pct: 0 };
+  
+  const dropPct = ((prev - last) / prev) * 100;
+  const isDrop = dropPct >= thresholdPct || (dropPct > 0.8 && volSpike);
+  
+  let msg = "";
+  if (isDrop) {
+    msg = `Caída rápida detectada: -${dropPct.toFixed(2)}%`;
+    if (volSpike) msg += " con SPIKE de volumen (DUMP confirmado)";
+    msg += ` en las últimas ${window} velas.`;
+  }
+  
+  return { drop: isDrop, pct: dropPct, msg };
 }
 
 export async function consultDeepseek({ apiKey, promptText, model = "deepseek-chat", temperature = 0.2 }) {

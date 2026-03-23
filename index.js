@@ -62,6 +62,8 @@ import {
   upsertFuturesShadowPosition,
   listFuturesShadowPositions,
   closeFuturesShadowPosition,
+  trackSignal,
+  computeRMultiple,
   setAutotradeFuturesStatus,
   fetchBinanceFuturesTopSymbols,
   filtrarPorSabiduria,
@@ -116,6 +118,7 @@ function parseCsv(name) {
 async function handleOne({ exchange, symbol, timeframe }) {
   const data = await fetchCandles({ exchange, symbol, timeframe });
   const signal = await buildSignal(data);
+  await trackSignal(signal).catch(() => {});
   return { signal, text: formatSignalMessage(signal), data };
 }
 
@@ -811,9 +814,16 @@ async function main() {
       const planText = plan?.text ? String(plan.text).trim() : "";
       const targetText = target?.text ? String(target.text).trim() : "";
       const msg =
-        `🚫 ${notifyName}, NO.\nEsto es una mala operación y te voy a frenar.\n\nRazones:\n- ${reasons.join("\n- ")}` +
+        `🚫 ${notifyName}, BLOQUEADO POR SEGURIDAD.\n` +
+        `Este filtro NO es un adorno: está analizando el mercado para PREVER caídas y evitar pérdidas como las de hoy.\n\n` +
+        `Razones de bloqueo:\n- ${reasons.join("\n- ")}` +
         (planText ? `\n\n📌 PLAN DE CONFIRMACIÓN:\n${planText}` : "") +
-        (targetText ? `\n\n🎯 AJUSTE DE ENTRADA:\n${targetText}` : "");
+        (targetText ? `\n\n🎯 AJUSTE DE ENTRADA:\n${targetText}` : "") +
+        `\n\n💡 *Estoy rastreando esta señal en silencio para aprender si el bloqueo fue correcto.*`;
+      
+      // AUNQUE SE BLOQUEE, RASTREAMOS PARA APRENDER
+      await trackSignal({ ...signal, guardReasons: reasons }).catch(() => {});
+
       if (plan && guard?.metrics?.riskGateAllow === false) {
         await upsertRiskPlanFromGate({
           chatId: ctx.chat?.id ?? ctx.from?.id,
@@ -900,10 +910,83 @@ async function main() {
     return pos;
   }
 
+  async function monitorTrackedSignals() {
+    try {
+      const mem = await loadMemory();
+      const signals = Array.isArray(mem.trackedSignals) ? mem.trackedSignals : [];
+      const tracking = signals.filter(s => s.status === "TRACKING");
+      if (!tracking.length) return;
+
+      for (const s of tracking) {
+        try {
+          const p = await fetchLastPrice({ exchange: s.exchange, symbol: s.symbol });
+          const price = p.price;
+          const entry = Number(s.entry);
+          const sl = Number(s.sl);
+          const tp = Number(s.tp);
+          
+          let hit = null;
+          if (s.side === "LONG") {
+            if (Number.isFinite(tp) && price >= tp) hit = "TP";
+            if (Number.isFinite(sl) && price <= sl) hit = "SL";
+          } else if (s.side === "SHORT") {
+            if (Number.isFinite(tp) && price <= tp) hit = "TP";
+            if (Number.isFinite(sl) && price >= sl) hit = "SL";
+          }
+
+          // Timeout después de 24 horas si no ha tocado nada
+          const ageHours = (Date.now() - s.trackedAt) / (1000 * 60 * 60);
+          if (!hit && ageHours >= 24) hit = "TIMEOUT";
+
+          if (hit) {
+            const riskSl = Number(s.sl);
+            const r = computeRMultiple(s.side, entry, riskSl, price);
+            
+            s.status = hit;
+            s.closedAt = Date.now();
+            s.exitPrice = price;
+            s.r = r;
+
+            // Aprender de la señal rastreada (aunque no se haya operado)
+            if (deepseekKey) {
+              const learningContext = { 
+                source: "tracked_signal", 
+                result: hit, 
+                r,
+                blocked_by_guard: Array.isArray(s.guardReasons) && s.guardReasons.length > 0,
+                guard_reasons: s.guardReasons || []
+              };
+
+              await learnFromTradeWithDeepseek({
+                apiKey: deepseekKey,
+                trade: { ...s, exit: price, reason: hit },
+                context: learningContext
+              }).catch(() => {});
+
+              if (hit === "SL" || (Number.isFinite(r) && r < 0) || learningContext.blocked_by_guard) {
+                await generarAutocritica({
+                  apiKey: deepseekKey,
+                  tradeFallido: { ...s, exit: price, reason: hit, pnl_num: r * 100 },
+                  contexto: learningContext
+                }).catch(() => {});
+              }
+            }
+          }
+        } catch (e) {
+          // Ignorar errores individuales de red/API
+        }
+      }
+      await saveMemory(mem);
+    } catch (e) {
+      logAprendizaje("Monitor de Señales: fallo general", e?.message);
+    }
+  }
+
   async function monitorPaperPositions() {
     if (monitoring) return;
     monitoring = true;
     try {
+      await monitorTrackedSignals();
       const positions = await listPaperPositions();
       for (const pos of positions) {
         try {

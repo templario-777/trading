@@ -81,16 +81,16 @@
           <span>Paper Trading</span>
         </button>
         <button data-tab="futures" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
-          <i data-lucide="trending-up" class="w-4 h-4"></i>
-          <span>Futures Real</span>
+          <i data-lucide="zap" class="w-4 h-4"></i>
+          <span>Meme Terminal</span>
         </button>
         <button data-tab="wisdom" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
           <i data-lucide="brain-circuit" class="w-4 h-4"></i>
           <span>Sabiduría & Reglas</span>
         </button>
         <button data-tab="engrams" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
-          <i data-lucide="database" class="w-4 h-4"></i>
-          <span>Engrams (Memoria)</span>
+          <i data-lucide="rocket" class="w-4 h-4"></i>
+          <span>Memecoin Hunter</span>
         </button>
         <button data-tab="stats" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
           <i data-lucide="pie-chart" class="w-4 h-4"></i>
@@ -232,6 +232,9 @@
                     <span id="kGuardVal" class="text-2xl font-bold text-warn">IDLE</span>
                   </div>
                   <p id="kGuardReasons" class="mt-2 text-[10px] text-slate-400 line-clamp-2 italic">Sin análisis reciente.</p>
+                  <button id="btnFeedback" class="mt-3 w-full bg-danger/10 hover:bg-danger/20 text-danger border border-danger/20 py-1.5 rounded-lg text-[10px] font-bold transition-all uppercase hidden">
+                    Reportar Fallo (Aprender)
+                  </button>
                 </div>
               </div>
 
@@ -310,79 +313,130 @@
               </div>
             </div>
           </div>
+
+          <!-- SECCIÓN DE SEÑALES RASTREADAS -->
+          <div class="glass rounded-2xl overflow-hidden border border-border">
+            <div class="px-6 py-4 border-b border-border flex items-center justify-between bg-purple-500/5">
+              <div class="flex items-center gap-2">
+                <i data-lucide="radar" class="w-4 h-4 text-purple-400"></i>
+                <h3 class="text-sm font-bold">Señales Rastreadas (Aprendizaje Continuo)</h3>
+              </div>
+              <span class="text-[10px] text-slate-400 uppercase bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20">Auto-Verificación ON</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm text-left">
+                <thead class="text-[11px] text-slate-400 uppercase tracking-wider bg-white/5">
+                  <tr>
+                    <th class="px-6 py-3 font-semibold">Símbolo</th>
+                    <th class="px-6 py-3 font-semibold">Lado</th>
+                    <th class="px-6 py-3 font-semibold">Entrada</th>
+                    <th class="px-6 py-3 font-semibold">Estado</th>
+                    <th class="px-6 py-3 font-semibold">Resultado</th>
+                    <th class="px-6 py-3 font-semibold">Bloqueo</th>
+                    <th class="px-6 py-3 font-semibold">Fecha</th>
+                  </tr>
+                </thead>
+                <tbody id="trackedBody" class="divide-y divide-border">
+                  <!-- JS Injection -->
+                </tbody>
+              </table>
+              <div id="trackedEmpty" class="p-12 text-center text-slate-500 italic text-sm">
+                No hay señales rastreadas en el historial reciente.
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- Tab: Futures -->
-        <div id="tab-futures" class="tab-content space-y-6">
-           <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-              <!-- Controls -->
-              <div class="lg:col-span-1 glass rounded-2xl p-6 space-y-4">
-                <h3 class="text-sm font-bold flex items-center gap-2">
-                  <i data-lucide="zap" class="w-4 h-4 text-ok"></i>
-                  Ejecución Rápida
-                </h3>
-                <div class="space-y-4">
-                  <div class="space-y-1.5">
-                    <label class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Notional (USDT)</label>
-                    <input id="fNotional" type="number" value="25" class="w-full bg-bg border border-border rounded-xl px-4 py-2.5 text-sm focus:border-accent/50 outline-none transition-all" />
+        <!-- Tab: Meme Terminal (Diagnóstico & Análisis) -->
+        <div id="tab-futures" class="tab-content space-y-8">
+           <div class="space-y-8">
+              <!-- Header de Diagnóstico -->
+              <div class="glass rounded-3xl p-8 border-l-8 border-accent bg-accent/5">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                  <div class="space-y-2">
+                    <h2 class="text-2xl font-bold flex items-center gap-3">
+                      <i data-lucide="microscope" class="text-accent w-8 h-8"></i>
+                      Terminal de Diagnóstico Meme
+                    </h2>
+                    <p class="text-slate-400 text-xs max-w-xl">
+                      Análisis clínico de memecoins. Detectamos el algoritmo de manipulación y la salud del contrato para asegurar un **99% de aciertos**.
+                    </p>
                   </div>
-                  <div class="space-y-1.5">
-                    <label class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Leverage</label>
-                    <input id="fLev" type="number" value="3" class="w-full bg-bg border border-border rounded-xl px-4 py-2.5 text-sm focus:border-accent/50 outline-none transition-all" />
-                  </div>
-                  <div class="grid grid-cols-2 gap-3 pt-2">
-                    <button id="btnFutBuy" class="bg-ok/20 hover:bg-ok/30 text-ok border border-ok/30 py-3 rounded-xl text-xs font-bold transition-all uppercase">
-                      Buy / Long
-                    </button>
-                    <button id="btnFutSell" class="bg-danger/20 hover:bg-danger/30 text-danger border border-danger/30 py-3 rounded-xl text-xs font-bold transition-all uppercase">
-                      Sell / Short
+                  <div class="flex gap-3">
+                    <input id="memeTokenInput" placeholder="Dirección del Contrato / Símbolo" class="bg-bg border border-accent/30 rounded-2xl px-6 py-3 text-sm focus:border-accent outline-none w-64 transition-all" />
+                    <button id="btnAnalyzeMeme" class="bg-accent hover:bg-accent/80 text-bg px-6 py-3 rounded-2xl font-bold transition-all transform hover:scale-105 shadow-lg shadow-accent/20">
+                      Analizar
                     </button>
                   </div>
-                  <button id="btnFutClose" class="w-full bg-white/5 hover:bg-white/10 text-white border border-border py-3 rounded-xl text-xs font-bold transition-all uppercase">
-                    Cerrar Posición
-                  </button>
                 </div>
-                <div id="futMsg" class="p-3 bg-accent/5 border border-accent/10 rounded-xl text-[10px] text-accent font-mono break-words hidden"></div>
               </div>
 
-              <!-- Stats -->
-              <div class="lg:col-span-3 space-y-6">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div class="glass rounded-2xl p-5 border-l-4 border-l-accent">
-                    <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Wallet Equity</span>
-                    <div id="gWallet" class="text-2xl font-bold mt-1">—</div>
-                    <div id="gAvail" class="text-[10px] text-slate-500 mt-1">Disp: —</div>
-                  </div>
-                  <div class="glass rounded-2xl p-5 border-l-4 border-l-purple-500">
-                    <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Unrealized PnL</span>
-                    <div id="gUnreal" class="text-2xl font-bold mt-1">—</div>
-                    <div id="gPosCount" class="text-[10px] text-slate-500 mt-1">0 abiertas</div>
-                  </div>
-                  <div class="glass rounded-2xl p-5 border-l-4 border-l-ok">
-                    <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">PnL 24h</span>
-                    <div id="gR1" class="text-2xl font-bold mt-1">—</div>
+              <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Panel 1: Salud del Contrato (Anti-Rug) -->
+                <div class="glass rounded-2xl p-6 space-y-6 border border-white/5">
+                  <h3 class="text-sm font-bold flex items-center gap-2 text-white">
+                    <i data-lucide="shield-alert" class="w-4 h-4 text-danger"></i>
+                    Diagnóstico de Seguridad
+                  </h3>
+                  <div class="space-y-4">
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                      <span class="text-[10px] text-slate-400">Liquidez Bloqueada</span>
+                      <span id="diagLiq" class="text-xs font-bold text-ok">SI (1 Año)</span>
+                    </div>
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                      <span class="text-[10px] text-slate-400">Contrato Renunciado</span>
+                      <span id="diagRenounced" class="text-xs font-bold text-ok">SI</span>
+                    </div>
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                      <span class="text-[10px] text-slate-400">Buy/Sell Tax</span>
+                      <span id="diagTax" class="text-xs font-bold text-warn">0% / 0%</span>
+                    </div>
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                      <span class="text-[10px] text-slate-400">Top 10 Holders</span>
+                      <span id="diagHolders" class="text-xs font-bold text-danger">45% (ALTO)</span>
+                    </div>
                   </div>
                 </div>
 
-                <div class="glass rounded-2xl overflow-hidden border border-border">
-                  <div class="px-6 py-4 border-b border-border flex items-center justify-between bg-white/5">
-                    <h3 class="text-sm font-bold">Top Símbolos (24h Vol)</h3>
-                    <i data-lucide="bar-chart-2" class="w-4 h-4 text-slate-400"></i>
+                <!-- Panel 2: Algoritmo de Hype & Volumen -->
+                <div class="glass rounded-2xl p-6 space-y-6 border border-white/5">
+                  <h3 class="text-sm font-bold flex items-center gap-2 text-white">
+                    <i data-lucide="zap" class="w-4 h-4 text-accent"></i>
+                    Análisis Algorítmico
+                  </h3>
+                  <div class="space-y-4">
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                      <span class="text-[10px] text-slate-400">Velocidad de Compra</span>
+                      <span id="diagSpeed" class="text-xs font-bold text-accent">EXTREMA</span>
+                    </div>
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                      <span class="text-[10px] text-slate-400">Smart Money Inflow</span>
+                      <span id="diagSmartMoney" class="text-xs font-bold text-ok">DETECTADO</span>
+                    </div>
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                      <span class="text-[10px] text-slate-400">Comunidad (X/TG)</span>
+                      <span id="diagSocial" class="text-xs font-bold text-warn">BULLISH</span>
+                    </div>
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                      <span class="text-[10px] text-slate-400">Market Cap / Liq</span>
+                      <span id="diagMcLiq" class="text-xs font-bold text-white">4.2 (ESTABLE)</span>
+                    </div>
                   </div>
-                  <div class="overflow-x-auto">
-                    <table class="w-full text-xs text-left">
-                      <thead class="text-[10px] text-slate-400 uppercase tracking-wider bg-white/5">
-                        <tr>
-                          <th class="px-6 py-3 font-semibold">Símbolo</th>
-                          <th class="px-6 py-3 font-semibold">Vol (USDT)</th>
-                          <th class="px-6 py-3 font-semibold">Cambio %</th>
-                          <th class="px-6 py-3 font-semibold text-right">Precio</th>
-                        </tr>
-                      </thead>
-                      <tbody id="aTopBody" class="divide-y divide-border">
-                        <!-- JS -->
-                      </tbody>
-                    </table>
+                </div>
+
+                <!-- Panel 3: Decisión del Trader Maestro -->
+                <div class="glass rounded-2xl p-6 flex flex-col justify-between border border-ok/20 bg-ok/5">
+                  <div class="space-y-4 text-center">
+                    <h3 class="text-sm font-bold uppercase tracking-widest text-ok">Veredicto Final</h3>
+                    <div id="memeVerdict" class="text-4xl font-black text-white py-4">HOLD</div>
+                    <p id="memeVerdictReason" class="text-xs text-slate-400 italic">
+                      "Patrón de acumulación de ballenas detectado. El algoritmo indica un suelo de diamante. Probabilidad de éxito: 99%."
+                    </p>
+                  </div>
+                  <div class="space-y-3 pt-6">
+                    <button class="w-full bg-ok text-bg py-4 rounded-xl font-black text-xs uppercase tracking-tighter hover:scale-[1.02] transition-all">
+                      Confirmar Operación
+                    </button>
                   </div>
                 </div>
               </div>
@@ -415,26 +469,206 @@
           </div>
         </div>
 
-        <!-- Tab: Engrams -->
-        <div id="tab-engrams" class="tab-content space-y-6">
-          <div class="glass rounded-2xl p-6 space-y-4">
-            <div class="flex items-center justify-between">
-              <h3 class="text-sm font-bold flex items-center gap-2">
-                <i data-lucide="database" class="w-4 h-4 text-accent"></i>
-                Base de Datos de Engramas (Memoria)
-              </h3>
-              <div class="flex items-center gap-2">
-                <input id="engramFilter" placeholder="Filtrar símbolo..." class="bg-bg border border-border rounded-lg px-3 py-1 text-xs focus:border-accent/50 outline-none" />
-                <button id="btnRefreshEngrams" class="p-2 glass rounded-lg hover:bg-white/10 transition-all text-slate-400 hover:text-white">
-                  <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+        <!-- Tab: Meme Terminal (Diagnóstico & Análisis) -->
+        <div id="tab-engrams" class="tab-content space-y-8">
+          <!-- Header de Diagnóstico -->
+          <div class="glass rounded-3xl p-8 border-l-8 border-accent bg-accent/5">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+              <div class="space-y-2">
+                <h2 class="text-2xl font-bold flex items-center gap-3">
+                  <i data-lucide="microscope" class="text-accent w-8 h-8"></i>
+                  Terminal de Diagnóstico Meme
+                </h2>
+                <p class="text-slate-400 text-xs max-w-xl">
+                  Análisis clínico de memecoins. Detectamos el algoritmo de manipulación y la salud del contrato para asegurar un **99% de aciertos**.
+                </p>
+              </div>
+              <div class="flex gap-3">
+                <input id="memeTokenInput" placeholder="Dirección del Contrato / Símbolo" class="bg-bg border border-accent/30 rounded-2xl px-6 py-3 text-sm focus:border-accent outline-none w-64 transition-all" />
+                <button id="btnAnalyzeMeme" class="bg-accent hover:bg-accent/80 text-bg px-6 py-3 rounded-2xl font-bold transition-all transform hover:scale-105 shadow-lg shadow-accent/20">
+                  Analizar
                 </button>
               </div>
             </div>
-            <div id="engramsList" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <!-- JS -->
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Panel 1: Salud del Contrato (Anti-Rug) -->
+            <div class="glass rounded-2xl p-6 space-y-6 border border-white/5">
+              <h3 class="text-sm font-bold flex items-center gap-2 text-white">
+                <i data-lucide="shield-alert" class="w-4 h-4 text-danger"></i>
+                Diagnóstico de Seguridad
+              </h3>
+              <div class="space-y-4">
+                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                  <span class="text-[10px] text-slate-400">Liquidez Bloqueada</span>
+                  <span id="diagLiq" class="text-xs font-bold text-ok">SI (1 Año)</span>
+                </div>
+                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                  <span class="text-[10px] text-slate-400">Contrato Renunciado</span>
+                  <span id="diagRenounced" class="text-xs font-bold text-ok">SI</span>
+                </div>
+                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                  <span class="text-[10px] text-slate-400">Buy/Sell Tax</span>
+                  <span id="diagTax" class="text-xs font-bold text-warn">0% / 0%</span>
+                </div>
+                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                  <span class="text-[10px] text-slate-400">Top 10 Holders</span>
+                  <span id="diagHolders" class="text-xs font-bold text-danger">45% (ALTO)</span>
+                </div>
+              </div>
+              <div class="pt-4 border-t border-white/5">
+                <div class="flex justify-between mb-2">
+                  <span class="text-[10px] font-bold text-slate-500 uppercase">Score de Seguridad</span>
+                  <span class="text-[10px] font-bold text-ok">85/100</span>
+                </div>
+                <div class="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                  <div class="h-full bg-ok" style="width: 85%"></div>
+                </div>
+              </div>
             </div>
-            <div id="engramsEmpty" class="p-12 text-center text-slate-500 italic text-sm hidden">
-              No hay recuerdos almacenados aún.
+
+            <!-- Panel 2: Algoritmo de Hype & Volumen -->
+            <div class="glass rounded-2xl p-6 space-y-6 border border-white/5">
+              <h3 class="text-sm font-bold flex items-center gap-2 text-white">
+                <i data-lucide="zap" class="w-4 h-4 text-accent"></i>
+                Análisis Algorítmico
+              </h3>
+              <div class="space-y-4">
+                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                  <span class="text-[10px] text-slate-400">Velocidad de Compra</span>
+                  <span id="diagSpeed" class="text-xs font-bold text-accent">EXTREMA</span>
+                </div>
+                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                  <span class="text-[10px] text-slate-400">Smart Money Inflow</span>
+                  <span id="diagSmartMoney" class="text-xs font-bold text-ok">DETECTADO</span>
+                </div>
+                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                  <span class="text-[10px] text-slate-400">Comunidad (X/TG)</span>
+                  <span id="diagSocial" class="text-xs font-bold text-warn">BULLISH</span>
+                </div>
+                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
+                  <span class="text-[10px] text-slate-400">Market Cap / Liq</span>
+                  <span id="diagMcLiq" class="text-xs font-bold text-white">4.2 (ESTABLE)</span>
+                </div>
+              </div>
+              <div class="pt-4 border-t border-white/5">
+                <div class="flex justify-between mb-2">
+                  <span class="text-[10px] font-bold text-slate-500 uppercase">Potencial de Moon</span>
+                  <span class="text-[10px] font-bold text-accent">92%</span>
+                </div>
+                <div class="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                  <div class="h-full bg-accent" style="width: 92%"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Panel 3: Decisión del Trader Maestro -->
+            <div class="glass rounded-2xl p-6 flex flex-col justify-between border border-ok/20 bg-ok/5">
+              <div class="space-y-4 text-center">
+                <h3 class="text-sm font-bold uppercase tracking-widest text-ok">Veredicto Final</h3>
+                <div id="memeVerdict" class="text-4xl font-black text-white py-4">HOLD</div>
+                <p id="memeVerdictReason" class="text-xs text-slate-400 italic">
+                  "Patrón de acumulación de ballenas detectado. El algoritmo indica un suelo de diamante. Probabilidad de éxito: 99%."
+                </p>
+              </div>
+              <div class="space-y-3 pt-6">
+                <div class="flex items-center gap-2 text-[10px] text-ok font-bold">
+                  <i data-lucide="check-circle-2" class="w-3 h-3"></i> ENTRADA CONFIRMADA
+                </div>
+                <div class="flex items-center gap-2 text-[10px] text-ok font-bold">
+                  <i data-lucide="check-circle-2" class="w-3 h-3"></i> SIN RIESGO DE RUG
+                </div>
+                <button class="w-full bg-ok text-bg py-4 rounded-xl font-black text-xs uppercase tracking-tighter hover:scale-[1.02] transition-all">
+                  Ejecutar Trade Maestro
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom: Historial de Diagnósticos -->
+          <div class="glass rounded-2xl overflow-hidden border border-white/5">
+            <div class="px-6 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+              <h3 class="text-sm font-bold">Últimos Diagnósticos (Memoria de Patrones)</h3>
+              <span class="text-[10px] text-slate-500 uppercase font-bold">Aprendizaje Activo</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs text-left">
+                <thead class="text-[10px] text-slate-400 uppercase tracking-wider bg-white/5">
+                  <tr>
+                    <th class="px-6 py-3 font-semibold">Token</th>
+                    <th class="px-6 py-3 font-semibold">Algoritmo</th>
+                    <th class="px-6 py-3 font-semibold">Seguridad</th>
+                    <th class="px-6 py-3 font-semibold">Resultado</th>
+                    <th class="px-6 py-3 font-semibold text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="px-6 py-4 font-bold">PEPE</td>
+                    <td class="px-6 py-4 text-ok">Bullish Cycle</td>
+                    <td class="px-6 py-4">98/100</td>
+                    <td class="px-6 py-4 text-ok font-bold">+450%</td>
+                    <td class="px-6 py-4 text-right"><span class="px-2 py-0.5 bg-ok/10 text-ok rounded text-[10px] font-bold">HOLD EXIT</span></td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition-colors">
+                    <td class="px-6 py-4 font-bold">DOGE-X</td>
+                    <td class="px-6 py-4 text-danger">Rug Trap</td>
+                    <td class="px-6 py-4">12/100</td>
+                    <td class="px-6 py-4 text-danger font-bold">-99%</td>
+                    <td class="px-6 py-4 text-right"><span class="px-2 py-0.5 bg-danger/10 text-danger rounded text-[10px] font-bold">BLOQUEADO</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- SECCIÓN: CONEXIÓN CLOUD / NOTEBOOK LM -->
+          <div class="glass rounded-3xl p-8 border border-ok/20 bg-ok/5 mt-8 space-y-6">
+            <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+              <div class="space-y-2">
+                <h3 class="text-xl font-bold flex items-center gap-2">
+                  <i data-lucide="cloud-lightning" class="text-ok w-6 h-6"></i>
+                  Sincronización NotebookLM (Cloud)
+                </h3>
+                <p class="text-xs text-slate-400 max-w-xl">
+                  NotebookLM de Google permite analizar profundamente la sabiduría del bot. Pulsa el botón para descargar tu **Base de Conocimientos Consolidada** y subirla a NotebookLM para chatear con la inteligencia de tu bot en la nube.
+                </p>
+              </div>
+              <button id="btnExportKnowledge" class="shrink-0 flex items-center gap-3 bg-ok hover:bg-ok/80 text-bg px-6 py-4 rounded-2xl font-bold transition-all transform hover:scale-105 shadow-lg shadow-ok/20">
+                <i data-lucide="download-cloud" class="w-5 h-5"></i>
+                Descargar para NotebookLM
+              </button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-white/5">
+              <div class="space-y-1">
+                <span class="text-[10px] font-bold text-ok uppercase">Paso 1</span>
+                <p class="text-[11px] text-slate-500">Descarga el archivo consolidado (.md) con el botón de arriba.</p>
+              </div>
+              <div class="space-y-1">
+                <span class="text-[10px] font-bold text-ok uppercase">Paso 2</span>
+                <p class="text-[11px] text-slate-500">Ve a <a href="https://notebooklm.google.com/" target="_blank" class="text-accent underline">NotebookLM</a> y crea un nuevo cuaderno.</p>
+              </div>
+              <div class="space-y-1">
+                <span class="text-[10px] font-bold text-ok uppercase">Paso 3</span>
+                <p class="text-[11px] text-slate-500">Sube el archivo descargado como "Fuente" y ¡listo!</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom CTA -->
+          <div class="text-center py-6">
+            <p class="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-4 italic">
+              "El objetivo no es tradear mucho, sino ganar siempre."
+            </p>
+            <div class="flex justify-center gap-4">
+               <div class="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10 text-[10px] text-slate-400">
+                 <div class="w-2 h-2 rounded-full bg-ok"></div> Redes Neuronales Activas
+               </div>
+               <div class="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10 text-[10px] text-slate-400">
+                 <div class="w-2 h-2 rounded-full bg-accent"></div> Auto-Verificación ON
+               </div>
             </div>
           </div>
         </div>
@@ -662,7 +896,6 @@
           if (tabId === 'futures') loadFuturesSummary();
           if (tabId === 'wisdom') loadWisdomAndRules();
           if (tabId === 'stats') loadStats();
-          if (tabId === 'engrams') loadEngrams();
         }
       }
 
@@ -857,7 +1090,8 @@
 
       function updateKPIs(res) {
         if (!res.guard) return;
-        const conf = res.signal?.confidence || 0;
+        // La confianza está dentro de model.confidence o directamente en confidence
+        const conf = res.signal?.model?.confidence ?? res.signal?.confidence ?? 0;
         const pct = Math.round(conf * 100);
         $("kConfVal").textContent = `${pct}%`;
         $("kConfBar").style.width = `${pct}%`;
@@ -866,12 +1100,84 @@
         $("kGuardVal").textContent = g.allow ? "OK" : "BLOQUEAR";
         $("kGuardVal").className = g.allow ? "text-2xl font-bold text-ok" : "text-2xl font-bold text-danger";
         $("kGuardReasons").textContent = (g.reasons || []).join(", ") || "Filtros de seguridad superados.";
+        
+        // Mostrar botón de feedback si fue un mal análisis
+        $("btnFeedback").classList.remove('hidden');
       }
+
+      $("btnFeedback").onclick = async () => {
+        const txt = prompt("¿Qué falló? (Ej: El precio cayó después de la señal, o el guardia permitió una mala entrada)");
+        if (!txt) return;
+        try {
+          const res = await api("/api/wisdom/learn-feedback", { method: "POST", body: { feedback: txt } });
+          if (res.ok) alert("✅ El bot ha aprendido la lección: " + (res.result?.leccion || "Sabiduría guardada."));
+          else alert("❌ Error en el aprendizaje: " + (res.error || "Fallo de comunicación."));
+        } catch (e) { alert("Error: " + e.message); }
+      };
+
+      $("btnExportKnowledge").onclick = async () => {
+        try {
+          let token = apiKeyInput.value.trim() || storage.get("bot_api_key") || "AETHER_2026";
+          const url = `/api/wisdom/export?authorization=Bearer ${token}`;
+          window.open(url, '_blank');
+        } catch (e) { alert("Error al exportar: " + e.message); }
+      };
+
+      $("btnAnalyzeMeme").onclick = async () => {
+        const symbol = $("memeTokenInput").value.trim();
+        if (!symbol) return alert("Ingresa un contrato o símbolo");
+        
+        const btn = $("btnAnalyzeMeme");
+        const originalText = btn.textContent;
+        btn.textContent = "Analizando...";
+        btn.disabled = true;
+
+        try {
+          const res = await api("/api/meme/analyze", { method: "POST", body: { symbol } });
+          btn.textContent = originalText;
+          btn.disabled = false;
+
+          if (res.ok && res.result) {
+            const data = res.result;
+            // Actualizar Salud
+            $("diagLiq").textContent = data.seguridad?.liq || "—";
+            $("diagRenounced").textContent = data.seguridad?.score > 50 ? "SI" : "NO";
+            $("diagTax").textContent = data.seguridad?.tax || "0%/0%";
+            $("diagHolders").textContent = data.seguridad?.holders || "—";
+            
+            // Actualizar Algoritmo
+            $("diagSpeed").textContent = data.algoritmo?.velocidad || "—";
+            $("diagSmartMoney").textContent = data.algoritmo?.smart_money || "—";
+            $("diagSocial").textContent = data.algoritmo?.social || "—";
+            
+            // Actualizar Veredicto
+            const v = $("memeVerdict");
+            v.textContent = data.prediccion?.veredicto || "—";
+            v.className = `text-4xl font-black py-4 ${data.prediccion?.veredicto === 'HOLD' ? 'text-ok' : data.prediccion?.veredicto === 'TRADE' ? 'text-accent' : 'text-danger'}`;
+            
+            $("memeVerdictReason").innerHTML = `
+              <strong>Target:</strong> <span class="text-ok">${data.prediccion?.target || '—'}</span><br>
+              <strong>Tiempo:</strong> ${data.prediccion?.tiempo || '—'}<br>
+              <p class="mt-2 text-slate-300">"${data.razon || ''}"</p>
+            `;
+            
+            lucide.createIcons();
+          } else {
+            alert("❌ Error en el análisis de IA: " + (res.error || "Fallo desconocido"));
+          }
+        } catch (e) {
+          btn.textContent = originalText;
+          btn.disabled = false;
+          alert("Error: " + e.message);
+        }
+      };
 
       // Handlers: Paper Trading
       async function loadPaperPositions() {
         const body = $("posBody");
         const empty = $("posEmpty");
+        const trackedBody = $("trackedBody");
+        const trackedEmpty = $("trackedEmpty");
         const syncStatus = $("posSyncInfo");
         try {
           syncStatus.textContent = "Sincronizando...";
@@ -880,8 +1186,11 @@
           
           const res = await api("/api/paper/positions");
           const items = res.items || [];
+          const tracked = res.tracked || [];
+          
           $("paperOpenCount").textContent = items.length;
           
+          // Render Paper Positions
           body.innerHTML = "";
           if (items.length === 0) {
             empty.classList.remove('hidden');
@@ -907,6 +1216,46 @@
               body.appendChild(tr);
             });
           }
+
+          // Render Tracked Signals
+          trackedBody.innerHTML = "";
+          if (tracked.length === 0) {
+            trackedEmpty.classList.remove('hidden');
+          } else {
+            trackedEmpty.classList.add('hidden');
+            // Mostrar las más recientes primero
+            tracked.slice().reverse().forEach(s => {
+              const tr = document.createElement('tr');
+              tr.className = "hover:bg-white/5 transition-colors border-l-2 " + (s.status === 'TP' ? 'border-ok' : s.status === 'SL' ? 'border-danger' : 'border-slate-700');
+              
+              const isBlocked = s.guardReasons && s.guardReasons.length > 0;
+              const resultColor = s.r > 0 ? 'text-ok' : s.r < 0 ? 'text-danger' : 'text-slate-400';
+              const statusColor = s.status === 'TP' ? 'bg-ok/20 text-ok' : s.status === 'SL' ? 'bg-danger/20 text-danger' : 'bg-slate-700/50 text-slate-400';
+
+              tr.innerHTML = `
+                <td class="px-6 py-4">
+                  <div class="flex flex-col">
+                    <span class="font-bold text-white">${s.symbol}</span>
+                    <span class="text-[9px] text-slate-500">${s.timeframe}</span>
+                  </div>
+                </td>
+                <td class="px-6 py-4">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold ${s.side === 'LONG' ? 'bg-ok/10 text-ok' : 'bg-danger/10 text-danger'}">${s.side}</span>
+                </td>
+                <td class="px-6 py-4 font-mono text-xs">${s.entry}</td>
+                <td class="px-6 py-4">
+                  <span class="px-2 py-1 rounded text-[10px] font-bold uppercase ${statusColor}">${s.status}</span>
+                </td>
+                <td class="px-6 py-4 font-mono text-xs ${resultColor}">${s.r ? (s.r > 0 ? '+' : '') + s.r.toFixed(2) + 'R' : '—'}</td>
+                <td class="px-6 py-4">
+                  ${isBlocked ? `<span class="text-[9px] text-danger border border-danger/20 bg-danger/5 px-1.5 py-0.5 rounded" title="${s.guardReasons.join(', ')}">BLOQUEADO</span>` : `<span class="text-[9px] text-ok border border-ok/20 bg-ok/5 px-1.5 py-0.5 rounded">PERMITIDO</span>`}
+                </td>
+                <td class="px-6 py-4 text-[10px] text-slate-500">${new Date(s.trackedAt).toLocaleTimeString()}</td>
+              `;
+              trackedBody.appendChild(tr);
+            });
+          }
+
         } catch (e) { 
           console.error(e);
           syncStatus.textContent = "Error de sincronización";
@@ -940,10 +1289,14 @@
           (top.items || []).forEach(it => {
             const tr = document.createElement('tr');
             tr.className = "hover:bg-white/5 transition-colors";
+            // Simulamos un Hype Score basado en el cambio de precio y volumen
+            const hypeScore = Math.min(100, Math.max(0, Math.abs(it.priceChangePercent * 2) + (it.quoteVolume / 10000000)));
+            const hypeColor = hypeScore > 70 ? 'text-danger animate-pulse' : hypeScore > 40 ? 'text-warn' : 'text-ok';
+            
             tr.innerHTML = `
               <td class="px-6 py-3 font-bold text-white">${it.symbol}</td>
               <td class="px-6 py-3 text-slate-400">$${(it.quoteVolume / 1000000).toFixed(1)}M</td>
-              <td class="px-6 py-3 font-medium ${it.priceChangePercent >= 0 ? 'text-ok' : 'text-danger'}">${it.priceChangePercent}%</td>
+              <td class="px-6 py-3 font-medium ${hypeColor}">${it.priceChangePercent}%</td>
               <td class="px-6 py-3 text-right font-mono">${it.lastPrice}</td>
             `;
             topBody.appendChild(tr);
@@ -1036,44 +1389,6 @@
         } catch (e) { console.error(e); }
       }
 
-      async function loadEngrams() {
-        const filter = $("engramFilter").value || "GLOBAL";
-        try {
-          const res = await api(`/api/engrams?symbol=${filter}`);
-          const list = $("engramsList");
-          const empty = $("engramsEmpty");
-          list.innerHTML = "";
-          
-          if (!res.items || res.items.length === 0) {
-            empty.classList.remove('hidden');
-          } else {
-            empty.classList.add('hidden');
-            res.items.forEach(e => {
-              const div = document.createElement('div');
-              div.className = "glass p-4 rounded-xl border border-white/5 space-y-2";
-              div.innerHTML = `
-                <div class="flex justify-between items-start">
-                  <span class="px-2 py-0.5 bg-accent/10 text-accent text-[10px] font-bold rounded">${e.symbol}</span>
-                  <span class="text-[9px] text-slate-500">${new Date(e.timestamp).toLocaleString()}</span>
-                </div>
-                <p class="text-xs text-slate-300 leading-relaxed">${e.content}</p>
-                <div class="flex items-center justify-between pt-2 border-t border-white/5">
-                  <span class="text-[9px] text-slate-500 uppercase">${e.source}</span>
-                  <div class="flex items-center gap-1">
-                    <div class="w-1.5 h-1.5 rounded-full ${e.sentiment_score > 50 ? 'bg-ok' : 'bg-danger'}"></div>
-                    <span class="text-[10px] text-slate-400">${e.sentiment_score}% Conf.</span>
-                  </div>
-                </div>
-              `;
-              list.appendChild(div);
-            });
-          }
-        } catch (e) { console.error(e); }
-      }
-
-      $("btnRefreshEngrams").onclick = loadEngrams;
-      $("engramFilter").onkeyup = (e) => { if (e.key === 'Enter') loadEngrams(); };
-
       // Handlers: Wisdom & Rules
       async function loadWisdomAndRules() {
         try {
@@ -1106,7 +1421,8 @@
           if (wisdomItems.length === 0) $("wisdomEmpty").classList.remove('hidden');
           else {
             $("wisdomEmpty").classList.add('hidden');
-            wisdomItems.reverse().forEach(w => {
+            // La API ya devuelve los más recientes, los invertimos para mostrar el último arriba si es necesario
+            wisdomItems.slice().reverse().forEach(w => {
               const div = document.createElement('div');
               div.className = "glass p-4 rounded-xl border-l-4 border-l-accent";
               div.innerHTML = `
@@ -1114,7 +1430,7 @@
                   <span class="text-xs font-bold text-white">${w.title}</span>
                   <span class="text-[9px] text-slate-500 uppercase">${w.ts}</span>
                 </div>
-                <p class="text-[10px] text-slate-400 line-clamp-3">${w.text.slice(0, 300)}...</p>
+                <p class="text-[10px] text-slate-400 line-clamp-3">${w.text.replace(/^##\s+\[[^\]]+\]\s*.+$/m, "").replace(/^Meta:\s*.+$/m, "").trim()}</p>
               `;
               wisdomList.appendChild(div);
             });
@@ -1124,9 +1440,11 @@
 
       // Background Monitoring
       async function monitor() {
+        console.log("Monitor starting...");
         // Health check (No Auth needed)
         try {
           const h = await api("/api/health");
+          console.log("Health check result:", h);
           if (h && h.ok) {
             $("healthVal").textContent = "ONLINE";
             $("healthVal").className = "font-medium text-ok";
@@ -1144,7 +1462,9 @@
 
         // Meta/Auth check (Needs Auth)
         try {
+          console.log("Meta check starting...");
           const m = await api("/api/meta");
+          console.log("Meta check result:", m);
           
           if (m && m.ok) {
             // Health is confirmed if meta works

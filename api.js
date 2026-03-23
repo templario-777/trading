@@ -36,7 +36,11 @@ import {
   fetchFuturesTestnetEquity,
   fetchBinanceFuturesTopSymbols,
   getRecentEngrams,
-  saveEngram
+  saveEngram,
+  trackSignal,
+  learnFromUserFeedback,
+  consolidateAetherKnowledge,
+  analyzeMemeWithAI
 } from "./lib.js";
 
 function getEnvAny(names) {
@@ -56,9 +60,22 @@ function parseListEnv(name) {
 
 function getBearerToken(req) {
   const raw = String(req.headers.authorization ?? "").trim();
-  if (!raw) return null;
-  const m = raw.match(/^Bearer\s+(.+)$/i);
-  return m ? m[1].trim() : null;
+  if (raw) {
+    const m = raw.match(/^Bearer\s+(.+)$/i);
+    if (m) return m[1].trim();
+  }
+
+  // Soporte para token en query param (útil para descargas directas)
+  try {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const qAuth = url.searchParams.get("authorization");
+    if (qAuth) {
+      const m = qAuth.match(/^Bearer\s+(.+)$/i);
+      if (m) return m[1].trim();
+    }
+  } catch {}
+
+  return null;
 }
 
 function isLocalRequest(req) {
@@ -307,6 +324,7 @@ async function handle(req, res) {
     }
 
     if (req.method === "GET" && path === "/api/health") {
+      console.log("[HEALTH_CHECK] OK");
       sendJson(res, 200, { ok: true, ts: new Date().toISOString() }, cors);
       return;
     }
@@ -314,16 +332,20 @@ async function handle(req, res) {
     if (req.method === "GET" && path === "/api/meta") {
       const deepseekKey = Boolean(getEnvAny(["DEEPSEEK_KEY", "DEEPSEEK_API_KEY"]));
       const apiKeyEnabled = Boolean(getEnvAny(["TRADING_BOT_API_KEY"])) && !isLocalRequest(req);
-      const rawAuth = String(req.headers.authorization ?? "").trim();
+      
       let key = getEnvAny(["TRADING_BOT_API_KEY"]) || "AETHER_2026";
-      key = key ? String(key).trim() : "";
+      key = String(key).trim();
       if (key.startsWith("\"") && key.endsWith("\"") && key.length >= 2) key = key.slice(1, -1);
+      
       let token = getBearerToken(req);
       token = token ? String(token).trim() : "";
       if (token.startsWith("\"") && token.endsWith("\"") && token.length >= 2) token = token.slice(1, -1);
       
       const sshHost = String(process.env.SSH_HOST ?? "161.35.107.114").trim();
       const sshUser = String(process.env.SSH_USER ?? "root").trim();
+      
+      const authorized = Boolean(token) && token === key;
+      console.log(`[META_CHECK] Authorized: ${authorized} | Token: ${token.slice(0, 4)}... | Key: ${key.slice(0, 4)}...`);
       
       sendJson(
         res,
@@ -333,7 +355,7 @@ async function handle(req, res) {
           ts: new Date().toISOString(),
           deepseekKey,
           apiKeyEnabled,
-          authorized: Boolean(token) && token === key,
+          authorized,
           sshTarget: `${sshUser}@${sshHost}`,
           globalBrain: "connected"
         },
@@ -658,10 +680,68 @@ async function handle(req, res) {
     }
 
     if (req.method === "GET" && path === "/api/wisdom") {
-      const limit = Number(url.searchParams.get("limit") ?? "20");
-      const out = await readWisdomEntries({ last: limit });
-      const all = await readWisdomEntriesAll();
-      sendJson(res, 200, { items: out.items || [], total: all.items?.length || 0 }, cors);
+      const rawLimit = Number(url.searchParams.get("limit") ?? "40");
+      const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, Math.floor(rawLimit))) : 40;
+      const out = await readWisdomEntriesAll();
+      const entries = Array.isArray(out?.entries) ? out.entries : [];
+      const slice = entries.slice(Math.max(0, entries.length - limit));
+      const items = slice.map((text) => {
+        const meta = parseMetaLine(text);
+        const tl = parseTitleLine(text);
+        const until = meta.until ?? parseBanUntilDate(text) ?? null;
+        return {
+          ts: tl.ts,
+          title: tl.title,
+          until,
+          expired: until ? isExpiredBanEntry(text) : false,
+          meta,
+          text: String(text).slice(0, 1800)
+        };
+      });
+      sendJson(res, 200, { ok: true, path: out?.path ?? null, total: entries.length, items }, cors);
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/wisdom/export") {
+      const md = await consolidateAetherKnowledge();
+      res.writeHead(200, { 
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Disposition": "attachment; filename=AETHER_KNOWLEDGE_BASE.md",
+        ...cors
+      });
+      res.end(md);
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/meme/analyze") {
+      try {
+        const body = await readJsonBody(req);
+        const symbol = String(body?.symbol ?? "").trim();
+        
+        // El guardia de la API del bot
+        if (!isAuthorized(req)) {
+          sendJson(res, 401, { error: "unauthorized", message: "Clave de API del bot incorrecta" }, cors);
+          return;
+        }
+
+        if (!symbol) {
+          sendJson(res, 400, { error: "missing_symbol", message: "Símbolo requerido" }, cors);
+          return;
+        }
+        
+        // La IA usa su propia clave del .env internamente en lib.js
+        const result = await analyzeMemeWithAI({ tokenSymbol: symbol });
+        
+        if (!result) {
+          sendJson(res, 500, { error: "ai_failed", message: "La IA no pudo procesar el análisis. Revisa la clave DEEPSEEK_KEY en tu .env" }, cors);
+          return;
+        }
+        
+        sendJson(res, 200, { ok: true, result }, cors);
+      } catch (e) {
+        console.error("[MEME_ANALYZE_ERROR]", e);
+        sendJson(res, 500, { ok: false, error: "server_error", message: e?.message ?? String(e) }, cors);
+      }
       return;
     }
 
@@ -706,6 +786,10 @@ async function handle(req, res) {
             const signal = await buildSignal(data);
             const chartUrl = buildSignalChartUrl({ signal, candles: data.candles });
             const guard = await evaluarGuardiaDeEntrada({ signal, candles: data.candles });
+            
+            // Rastreo de señal para aprendizaje (incluso si se bloquea)
+            await trackSignal({ ...signal, guardReasons: guard?.reasons || [] }).catch(() => {});
+
             results.push({ timeframe: tf, signal, text: formatSignalMessage(signal), chartUrl, guard });
           } catch (e) {
             results.push({ timeframe: tf, error: e?.message ?? String(e) });
@@ -721,6 +805,9 @@ async function handle(req, res) {
         const chartUrl = buildSignalChartUrl({ signal, candles: data.candles });
         const guard = await evaluarGuardiaDeEntrada({ chatId: null, signal, candles: data.candles });
         
+        // Rastreo de señal para aprendizaje (incluso si se bloquea)
+        await trackSignal({ ...signal, guardReasons: guard?.reasons || [] }).catch(() => {});
+
         // Guardar como engrama (Memoria)
         saveEngram({
           symbol: symbol,
@@ -787,6 +874,10 @@ async function handle(req, res) {
           tp: ai.tp
         };
         const chartUrl = buildSignalChartUrl({ signal: pseudoSignal, candles: data.candles });
+        
+        // Rastreo de señal AI para aprendizaje
+        await trackSignal({ ...pseudoSignal, model: { strategyName: "ai_deepseek", confidence: ai.confianza / 100 } }).catch(() => {});
+
         let text = formatAiMessage(ai);
         const headlines = Array.isArray(ai?.context?.headlines) ? ai.context.headlines : [];
         const wisdom = String(ai?.context?.wisdom ?? "").trim();
@@ -808,9 +899,23 @@ async function handle(req, res) {
       return;
     }
 
+    if (req.method === "POST" && path === "/api/wisdom/learn-feedback") {
+      const { feedback } = body;
+      const key = getEnvAny(["DEEPSEEK_KEY", "DEEPSEEK_API_KEY"]);
+      if (!key) {
+        sendJson(res, 500, { error: "Falta DEEPSEEK_KEY en el servidor" }, cors);
+        return;
+      }
+      const ai = await learnFromUserFeedback({ apiKey: key, feedbackText: feedback });
+      sendJson(res, 200, { ok: !!ai, result: ai }, cors);
+      return;
+    }
+
     if (req.method === "GET" && path === "/api/paper/positions") {
-      const items = await listPaperPositions();
-      sendJson(res, 200, { items }, cors);
+      const positions = await listPaperPositions();
+      const mem = await loadMemory();
+      const tracked = Array.isArray(mem.trackedSignals) ? mem.trackedSignals : [];
+      sendJson(res, 200, { items: positions, tracked }, cors);
       return;
     }
 
