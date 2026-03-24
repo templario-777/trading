@@ -403,7 +403,11 @@ export async function consolidateAetherKnowledge() {
 
   let fullMarkdown = "# BASE DE CONOCIMIENTOS AETHER - CONEXIÓN NOTEBOOKLM\n\n";
   fullMarkdown += `Generado el: ${new Date().toISOString()}\n\n`;
-  fullMarkdown += "Este documento consolida toda la inteligencia evolutiva del bot para su análisis en NotebookLM.\n\n---\n\n";
+  fullMarkdown += "Este documento consolida toda la inteligencia evolutiva del bot para su análisis en NotebookLM.\n\n";
+  fullMarkdown += "### INSTRUCCIONES PARA NOTEBOOKLM:\n";
+  fullMarkdown += "1. Sube este archivo como fuente.\n";
+  fullMarkdown += "2. Pide a NotebookLM que resuma los patrones de éxito y fracaso.\n";
+  fullMarkdown += "3. Genera nuevas reglas de trading basadas en las lecciones aprendidas.\n\n---\n\n";
 
   for (const f of files) {
     try {
@@ -705,21 +709,45 @@ export async function analyzeMemeWithAI({ tokenSymbol }) {
   
   // 2. Construir el prompt para la IA "Cazadora de Memes"
   const prompt = [
-    "ACTÚA COMO UN ANALISTA DE ÉLITE DE MEMECOINS CON ACCESO A DATOS DE ALGORITMOS DE MERCADO.",
+    "ACTÚA COMO UN ANALISTA DE ÉLITE DE MEMECOINS Y EXPERTO EN SEÑALES DE TRADING PROFESIONALES.",
     `TOKEN A ANALIZAR: ${tokenSymbol}`,
-    marketData ? `DATOS REALES: Precio=${marketData.lastPrice}, Cambio24h=${marketData.priceChangePercent}%, Vol=${marketData.quoteVolume}` : "DATOS: Token nuevo o fuera de Binance Top.",
+    marketData ? `DATOS REALES: Precio=${marketData.lastPrice}, Cambio24h=${marketData.priceChangePercent}%, Vol=${marketData.quoteVolume}` : "DATOS: Token nuevo o a punto de listarse.",
     "",
     "TU TAREA:",
     "1. Diagnostica si es un 'PUMP ALGORÍTMICO' (manipulado) o 'CRECIMIENTO ORGÁNICO'.",
-    "2. Predice el POTENCIAL DE SUBIDA (ej: 2x, 5x, 10x) basado en el patrón actual.",
-    "3. Determina el TIEMPO DE TRADE (ej: 'Salir en 15 min', 'Hold 3 días').",
-    "4. Da un veredicto final: HOLD, TRADE o AVOID.",
+    "2. Genera una SEÑAL DE TRADING COMPLETA con el siguiente formato estricto:",
+    "   - Símbolo (Exchange)",
+    "   - TF (Timeframe recomendado)",
+    "   - Señal (LONG/SHORT/NEUTRAL)",
+    "   - Entrada aprox, StopLoss, TakeProfit1, TakeProfit2",
+    "   - Indicadores técnicos simulados (EMA 12/21, RSI, ATR) basados en la volatilidad de memes.",
+    "   - Score de adaptación y confianza.",
+    "   - Estrategia y tendencia detectada.",
     "",
     "Responde en JSON puro con este formato:",
     "{",
     "  \"seguridad\": { \"score\": 0-100, \"liq\": \"estado\", \"tax\": \"0%/0%\", \"holders\": \"distribución\" },",
     "  \"algoritmo\": { \"score\": 0-100, \"velocidad\": \"lenta/media/extrema\", \"smart_money\": \"si/no\", \"social\": \"sentimiento\" },",
-    "  \"prediccion\": { \"veredicto\": \"HOLD/TRADE/AVOID\", \"target\": \"+200%\", \"tiempo\": \"2 horas\", \"riesgo\": \"alto/medio\" },",
+    "  \"prediccion\": { ",
+    "    \"veredicto\": \"HOLD/TRADE/AVOID\", ",
+    "    \"target\": \"+200%\", ",
+    "    \"tiempo\": \"2 horas\", ",
+    "    \"riesgo\": \"alto/medio\",",
+    "    \"signal\": \"LONG/SHORT\",",
+    "    \"entry\": \"precio\",",
+    "    \"sl\": \"precio\",",
+    "    \"tp1\": \"precio\",",
+    "    \"tp2\": \"precio\",",
+    "    \"rsi\": \"valor\",",
+    "    \"atr\": \"valor\",",
+    "    \"confianza\": 0.00,",
+    "    \"score\": 0.00,",
+    "    \"estrategia\": \"trend/reversal\",",
+    "    \"tendencia\": \"descripción corta\",",
+    "    \"sentiment\": \"60/100 NEUTRAL\",",
+    "    \"guardia\": \"BLOQUEAR/PERMITIR\",",
+    "    \"guardia_razon\": \"razón corta\"",
+    "  },",
     "  \"razon\": \"explicación detallada del patrón detectado\"",
     "}"
   ].join("\n");
@@ -2100,6 +2128,72 @@ export async function fetchWebSearchContext({ query, limit = 5 } = {}) {
     source: "Global Web Index",
     timestamp: new Date().toISOString()
   };
+}
+
+/**
+ * Importa conocimiento desde NotebookLM (u otras fuentes de texto).
+ * Divide el texto en fragmentos y los guarda como Engrams.
+ */
+export async function importNotebookLMKnowledge({ text, symbol = "GLOBAL", source = "NOTEBOOKLM" }) {
+  if (!text || typeof text !== "string") return { ok: false, error: "no_text" };
+
+  // Dividir por párrafos o bloques significativos (doble salto de línea)
+  const blocks = text
+    .split(/\n\s*\n/)
+    .map((b) => b.trim())
+    .filter((b) => b.length > 20); // Ignorar fragmentos muy cortos
+
+  let count = 0;
+  for (const block of blocks) {
+    try {
+      await saveEngram({
+        symbol,
+        content: block,
+        source,
+        sentimentScore: 50,
+        tags: "IMPORTED,NOTEBOOKLM"
+      });
+      count++;
+    } catch (e) {
+      console.error("[IMPORT_ERROR] Fallo al guardar bloque:", e);
+    }
+  }
+
+  return { ok: true, importedCount: count };
+}
+
+/**
+ * Soporte para Google Gemini API (NotebookLM Engine)
+ */
+export async function callGeminiAI({ apiKey, prompt, model = "gemini-1.5-pro" }) {
+  if (!apiKey) throw new Error("missing_gemini_key");
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 2048
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Gemini API Error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("empty_gemini_response");
+
+  return text;
 }
 
 export async function fetchCandles({ exchange, symbol, timeframe, limit = DEFAULT_LIMIT, _fallbackDepth = 0 } = {}) {
@@ -6015,7 +6109,22 @@ export async function buildAiTradeIdea({ exchange, symbol, timeframe, candles, a
     .filter(Boolean)
     .join("\n");
 
-  const ai = await consultDeepseek({ apiKey, promptText: prompt });
+  const geminiKey = getEnvAny(["GEMINI_API_KEY", "GOOGLE_API_KEY"]);
+  let ai;
+  if (geminiKey) {
+    console.log("[AI] Usando Google Gemini (NotebookLM Engine)");
+    const raw = await callGeminiAI({ apiKey: geminiKey, prompt });
+    try {
+      // Limpiar posibles bloques de código markdown ```json ... ```
+      const cleanJson = String(raw).replace(/```json/g, "").replace(/```/g, "").trim();
+      ai = JSON.parse(cleanJson);
+    } catch (e) {
+      console.error("[AI_PARSE_ERROR] Fallo al parsear JSON de Gemini:", raw);
+      ai = { accion: "ESPERAR", notas: "Error al parsear respuesta de Gemini" };
+    }
+  } else {
+    ai = await consultDeepseek({ apiKey, promptText: prompt });
+  }
 
   const merged = {
     accion: ai.accion ?? sideToAction(signal.side),

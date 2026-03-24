@@ -59,42 +59,58 @@
     </style>
   </head>
   <body class="h-screen flex flex-col md:flex-row overflow-hidden">
+    <!-- Mobile Header -->
+    <div class="md:hidden flex items-center justify-between p-4 glass border-b border-border z-30">
+      <div class="flex items-center gap-2">
+        <i data-lucide="zap" class="text-accent w-5 h-5"></i>
+        <span class="font-bold">Aether</span>
+      </div>
+      <button id="btnMobileMenu" class="p-2 hover:bg-white/5 rounded-lg transition-all">
+        <i data-lucide="menu" class="w-6 h-6"></i>
+      </button>
+    </div>
+
     <!-- Sidebar -->
-    <aside class="w-full md:w-64 glass border-r border-border flex flex-col z-20 shrink-0">
-      <div class="p-6 flex items-center gap-3">
-        <div class="w-10 h-10 bg-accent/20 rounded-xl flex items-center justify-center border border-accent/30">
-          <i data-lucide="zap" class="text-accent w-6 h-6"></i>
+    <aside id="sidebar" class="fixed inset-0 md:relative md:flex w-full md:w-64 glass border-r border-border flex-col z-20 shrink-0 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out">
+      <div class="p-6 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-accent/20 rounded-xl flex items-center justify-center border border-accent/30">
+            <i data-lucide="zap" class="text-accent w-6 h-6"></i>
+          </div>
+          <div>
+            <h1 class="text-lg font-bold tracking-tight">Aether</h1>
+            <p class="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Trading Engine</p>
+          </div>
         </div>
-        <div>
-          <h1 class="text-lg font-bold tracking-tight">Aether</h1>
-          <p class="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Trading Engine</p>
-        </div>
+        <button id="btnCloseMenu" class="md:hidden p-2 hover:bg-white/5 rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
       </div>
 
       <nav class="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
         <button data-tab="signals" class="tab-btn active w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
-          <i data-lucide="line-chart" class="w-4 h-4"></i>
-          <span>Señales & IA</span>
+          <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+          <span>Dashboard AI</span>
         </button>
         <button data-tab="paper" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
           <i data-lucide="layers" class="w-4 h-4"></i>
           <span>Paper Trading</span>
         </button>
-        <button data-tab="futures" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
-          <i data-lucide="zap" class="w-4 h-4"></i>
-          <span>Meme Terminal</span>
+        <button data-tab="engrams" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
+          <i data-lucide="brain-circuit" class="w-4 h-4"></i>
+          <span>Engrams & Memoria</span>
         </button>
         <button data-tab="wisdom" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
-          <i data-lucide="brain-circuit" class="w-4 h-4"></i>
-          <span>Sabiduría & Reglas</span>
-        </button>
-        <button data-tab="engrams" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
-          <i data-lucide="rocket" class="w-4 h-4"></i>
-          <span>Memecoin Hunter</span>
+          <i data-lucide="shield-check" class="w-4 h-4"></i>
+          <span>Reglas & Sabiduría</span>
         </button>
         <button data-tab="stats" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
-          <i data-lucide="pie-chart" class="w-4 h-4"></i>
-          <span>Analítica & PnL</span>
+          <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+          <span>Historial & PnL</span>
+        </button>
+        <button data-tab="terminal" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 text-slate-400 [&.active]:text-white [&.active]:bg-accent/10 [&.active]:border [&.active]:border-accent/20">
+          <i data-lucide="terminal" class="w-4 h-4"></i>
+          <span>Aether Console</span>
         </button>
       </nav>
 
@@ -129,6 +145,14 @@
               <span class="text-slate-500">Uptime</span>
               <span id="vpsUptime" class="text-slate-300">—</span>
             </div>
+            <div class="grid grid-cols-2 gap-1.5 mt-2">
+              <button id="btnVpsLogs" class="bg-white/5 hover:bg-white/10 text-slate-400 py-1.5 rounded text-[8px] font-bold uppercase tracking-tighter transition-all">
+                Ver Logs
+              </button>
+              <button id="btnVpsRestart" class="bg-danger/10 hover:bg-danger/20 text-danger py-1.5 rounded text-[8px] font-bold uppercase tracking-tighter transition-all">
+                Reiniciar
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -146,14 +170,32 @@
       <header class="h-16 glass border-b border-border flex items-center justify-between px-6 shrink-0">
         <div class="flex items-center gap-4">
           <div class="flex flex-col">
-            <span id="currentTabTitle" class="text-sm font-semibold">Señales & IA</span>
-            <span class="text-[10px] text-slate-400">Panel de control en tiempo real</span>
+            <span id="currentTabTitle" class="text-sm font-semibold uppercase tracking-widest text-accent">Dashboard AI</span>
+            <div class="flex items-center gap-2">
+              <span id="headerStatusDot" class="w-1.5 h-1.5 rounded-full bg-ok animate-pulse"></span>
+              <span class="text-[9px] text-slate-500 font-mono uppercase">Aether Connect v0.3.0 // Neural Active</span>
+            </div>
           </div>
         </div>
 
         <div class="flex items-center gap-4">
+          <div class="hidden lg:flex items-center gap-4 px-3 py-1.5 bg-white/5 rounded-2xl border border-white/5 text-[9px]">
+             <div class="flex flex-col items-center px-1">
+               <span class="text-slate-500 uppercase font-bold">Lat</span>
+               <span id="headerLatency" class="font-mono text-ok">0ms</span>
+             </div>
+             <div class="w-px h-5 bg-white/10"></div>
+             <div class="flex flex-col items-center px-1">
+               <span class="text-slate-500 uppercase font-bold">Up</span>
+               <span id="headerUptime" class="font-mono text-slate-300">0d 0h</span>
+             </div>
+          </div>
           <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 glass rounded-full text-xs">
-            <span class="text-slate-400">API Key:</span>
+            <span class="text-slate-400">API:</span>
+            <input id="apiBase" type="text" placeholder="Auto" class="bg-transparent border-none outline-none w-28 text-accent font-mono placeholder:text-slate-600" title="URL base de la API (ej: https://api.tu-bot.com). Deja vacío para usar la actual." />
+          </div>
+          <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 glass rounded-full text-xs">
+            <span class="text-slate-400">Key:</span>
             <input id="apiKey" type="password" placeholder="••••••••" class="bg-transparent border-none outline-none w-24 text-accent font-mono placeholder:text-slate-600" />
           </div>
           <button id="btnRefresh" class="p-2 glass rounded-xl hover:bg-white/10 transition-all text-slate-400 hover:text-white">
@@ -245,18 +287,34 @@
                     Salida de Análisis
                   </h3>
                   <div class="flex items-center gap-2">
+                    <button id="btnCopyTerm" class="p-1.5 hover:bg-white/5 rounded text-slate-500 hover:text-white transition-all" title="Copiar Terminal">
+                      <i data-lucide="copy" class="w-3 h-3"></i>
+                    </button>
                     <div class="w-2 h-2 rounded-full bg-ok animate-pulse"></div>
                     <span class="text-[10px] text-slate-400 uppercase">Live Console</span>
                   </div>
                 </div>
                 <!-- Box with internal scroll for news/log -->
-                <div class="flex-1 flex flex-col overflow-y-auto custom-scrollbar pr-2" style="max-height: 500px;">
-                  <div id="out" class="font-mono text-xs text-slate-300 bg-black/20 rounded-xl p-4 border border-white/5 whitespace-pre-wrap">
+                <div id="outScroll" class="flex-1 flex flex-col overflow-y-auto custom-scrollbar pr-2" style="max-height: 500px;">
+                  <div id="out" class="font-mono text-[11px] text-slate-300 bg-black/20 rounded-xl p-4 border border-white/5 whitespace-pre-wrap min-h-[100px]">
                     Esperando parámetros... Pulsa 'Señal' o 'IA' para comenzar.
                   </div>
                   <div id="newsContainer" class="hidden space-y-3 p-1">
                     <!-- News will be injected here -->
                   </div>
+                </div>
+                
+                <!-- Terminal Input -->
+                <div class="mt-3 relative">
+                  <div class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-xs select-none">root@aether:~#</div>
+                  <input id="termInput" type="text" placeholder="Escribe un comando o 'clear'..." class="w-full bg-black/40 border border-white/10 rounded-xl pl-24 pr-4 py-2 text-xs font-mono text-ok focus:border-accent/50 outline-none transition-all placeholder:text-slate-700" />
+                </div>
+                <!-- Quick Command Toolbar -->
+                <div class="flex gap-2 mt-2">
+                  <button onclick="termExec('uptime')" class="px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/5 rounded text-[8px] text-slate-500 uppercase font-bold transition-all">Uptime</button>
+                  <button onclick="termExec('free -m')" class="px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/5 rounded text-[8px] text-slate-500 uppercase font-bold transition-all">Memoria</button>
+                  <button onclick="termExec('df -h')" class="px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/5 rounded text-[8px] text-slate-500 uppercase font-bold transition-all">Disco</button>
+                  <button onclick="termExec('ps aux | grep node')" class="px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/5 rounded text-[8px] text-slate-500 uppercase font-bold transition-all">Procesos</button>
                 </div>
                 <!-- Chart container below -->
                 <div id="chartContainer" class="mt-4 rounded-xl overflow-hidden hidden bg-black/40 border border-white/5 shrink-0" style="height: 350px; min-height: 300px;">
@@ -469,207 +527,42 @@
           </div>
         </div>
 
-        <!-- Tab: Meme Terminal (Diagnóstico & Análisis) -->
+        <!-- Tab: Engrams & Memoria -->
         <div id="tab-engrams" class="tab-content space-y-8">
-          <!-- Header de Diagnóstico -->
           <div class="glass rounded-3xl p-8 border-l-8 border-accent bg-accent/5">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
               <div class="space-y-2">
                 <h2 class="text-2xl font-bold flex items-center gap-3">
-                  <i data-lucide="microscope" class="text-accent w-8 h-8"></i>
-                  Terminal de Diagnóstico Meme
+                  <i data-lucide="brain-circuit" class="text-accent w-8 h-8"></i>
+                  Recuerdos de la IA (Engrams)
                 </h2>
                 <p class="text-slate-400 text-xs max-w-xl">
-                  Análisis clínico de memecoins. Detectamos el algoritmo de manipulación y la salud del contrato para asegurar un **99% de aciertos**.
+                  Fragmentos de memoria extraídos de análisis previos. Estos datos alimentan la intuición del bot para detectar patrones de mercado.
                 </p>
               </div>
-              <div class="flex gap-3">
-                <input id="memeTokenInput" placeholder="Dirección del Contrato / Símbolo" class="bg-bg border border-accent/30 rounded-2xl px-6 py-3 text-sm focus:border-accent outline-none w-64 transition-all" />
-                <button id="btnAnalyzeMeme" class="bg-accent hover:bg-accent/80 text-bg px-6 py-3 rounded-2xl font-bold transition-all transform hover:scale-105 shadow-lg shadow-accent/20">
-                  Analizar
+              <div class="flex flex-wrap gap-3">
+                <input id="engramFilterInput" placeholder="Filtrar por Símbolo..." class="bg-bg border border-accent/30 rounded-2xl px-6 py-3 text-sm focus:border-accent outline-none w-64 transition-all" />
+                <button id="btnLoadEngrams" class="bg-accent hover:bg-accent/80 text-bg px-4 py-3 rounded-2xl font-bold transition-all transform hover:scale-105 shadow-lg shadow-accent/20">
+                  Refrescar
+                </button>
+                <button id="btnExportNotebookLM" class="bg-purple-500 hover:bg-purple-400 text-bg px-4 py-3 rounded-2xl font-bold transition-all transform hover:scale-105 shadow-lg shadow-purple-500/20 flex items-center gap-2" title="Exportar base de conocimientos para NotebookLM">
+                  <i data-lucide="download" class="w-4 h-4"></i>
+                  <span>Exportar</span>
+                </button>
+                <button id="btnImportNotebookLM" class="bg-ok hover:bg-ok/80 text-bg px-4 py-3 rounded-2xl font-bold transition-all transform hover:scale-105 shadow-lg shadow-ok/20 flex items-center gap-2" title="Importar respuestas de NotebookLM">
+                  <i data-lucide="upload" class="w-4 h-4"></i>
+                  <span>Importar</span>
                 </button>
               </div>
             </div>
           </div>
 
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Panel 1: Salud del Contrato (Anti-Rug) -->
-            <div class="glass rounded-2xl p-6 space-y-6 border border-white/5">
-              <h3 class="text-sm font-bold flex items-center gap-2 text-white">
-                <i data-lucide="shield-alert" class="w-4 h-4 text-danger"></i>
-                Diagnóstico de Seguridad
-              </h3>
-              <div class="space-y-4">
-                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
-                  <span class="text-[10px] text-slate-400">Liquidez Bloqueada</span>
-                  <span id="diagLiq" class="text-xs font-bold text-ok">SI (1 Año)</span>
-                </div>
-                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
-                  <span class="text-[10px] text-slate-400">Contrato Renunciado</span>
-                  <span id="diagRenounced" class="text-xs font-bold text-ok">SI</span>
-                </div>
-                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
-                  <span class="text-[10px] text-slate-400">Buy/Sell Tax</span>
-                  <span id="diagTax" class="text-xs font-bold text-warn">0% / 0%</span>
-                </div>
-                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
-                  <span class="text-[10px] text-slate-400">Top 10 Holders</span>
-                  <span id="diagHolders" class="text-xs font-bold text-danger">45% (ALTO)</span>
-                </div>
-              </div>
-              <div class="pt-4 border-t border-white/5">
-                <div class="flex justify-between mb-2">
-                  <span class="text-[10px] font-bold text-slate-500 uppercase">Score de Seguridad</span>
-                  <span class="text-[10px] font-bold text-ok">85/100</span>
-                </div>
-                <div class="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                  <div class="h-full bg-ok" style="width: 85%"></div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Panel 2: Algoritmo de Hype & Volumen -->
-            <div class="glass rounded-2xl p-6 space-y-6 border border-white/5">
-              <h3 class="text-sm font-bold flex items-center gap-2 text-white">
-                <i data-lucide="zap" class="w-4 h-4 text-accent"></i>
-                Análisis Algorítmico
-              </h3>
-              <div class="space-y-4">
-                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
-                  <span class="text-[10px] text-slate-400">Velocidad de Compra</span>
-                  <span id="diagSpeed" class="text-xs font-bold text-accent">EXTREMA</span>
-                </div>
-                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
-                  <span class="text-[10px] text-slate-400">Smart Money Inflow</span>
-                  <span id="diagSmartMoney" class="text-xs font-bold text-ok">DETECTADO</span>
-                </div>
-                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
-                  <span class="text-[10px] text-slate-400">Comunidad (X/TG)</span>
-                  <span id="diagSocial" class="text-xs font-bold text-warn">BULLISH</span>
-                </div>
-                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5">
-                  <span class="text-[10px] text-slate-400">Market Cap / Liq</span>
-                  <span id="diagMcLiq" class="text-xs font-bold text-white">4.2 (ESTABLE)</span>
-                </div>
-              </div>
-              <div class="pt-4 border-t border-white/5">
-                <div class="flex justify-between mb-2">
-                  <span class="text-[10px] font-bold text-slate-500 uppercase">Potencial de Moon</span>
-                  <span class="text-[10px] font-bold text-accent">92%</span>
-                </div>
-                <div class="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                  <div class="h-full bg-accent" style="width: 92%"></div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Panel 3: Decisión del Trader Maestro -->
-            <div class="glass rounded-2xl p-6 flex flex-col justify-between border border-ok/20 bg-ok/5">
-              <div class="space-y-4 text-center">
-                <h3 class="text-sm font-bold uppercase tracking-widest text-ok">Veredicto Final</h3>
-                <div id="memeVerdict" class="text-4xl font-black text-white py-4">HOLD</div>
-                <p id="memeVerdictReason" class="text-xs text-slate-400 italic">
-                  "Patrón de acumulación de ballenas detectado. El algoritmo indica un suelo de diamante. Probabilidad de éxito: 99%."
-                </p>
-              </div>
-              <div class="space-y-3 pt-6">
-                <div class="flex items-center gap-2 text-[10px] text-ok font-bold">
-                  <i data-lucide="check-circle-2" class="w-3 h-3"></i> ENTRADA CONFIRMADA
-                </div>
-                <div class="flex items-center gap-2 text-[10px] text-ok font-bold">
-                  <i data-lucide="check-circle-2" class="w-3 h-3"></i> SIN RIESGO DE RUG
-                </div>
-                <button class="w-full bg-ok text-bg py-4 rounded-xl font-black text-xs uppercase tracking-tighter hover:scale-[1.02] transition-all">
-                  Ejecutar Trade Maestro
-                </button>
-              </div>
-            </div>
+          <div id="engramsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+             <!-- Engrams will be injected here -->
           </div>
-
-          <!-- Bottom: Historial de Diagnósticos -->
-          <div class="glass rounded-2xl overflow-hidden border border-white/5">
-            <div class="px-6 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
-              <h3 class="text-sm font-bold">Últimos Diagnósticos (Memoria de Patrones)</h3>
-              <span class="text-[10px] text-slate-500 uppercase font-bold">Aprendizaje Activo</span>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="w-full text-xs text-left">
-                <thead class="text-[10px] text-slate-400 uppercase tracking-wider bg-white/5">
-                  <tr>
-                    <th class="px-6 py-3 font-semibold">Token</th>
-                    <th class="px-6 py-3 font-semibold">Algoritmo</th>
-                    <th class="px-6 py-3 font-semibold">Seguridad</th>
-                    <th class="px-6 py-3 font-semibold">Resultado</th>
-                    <th class="px-6 py-3 font-semibold text-right">Acción</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-white/5">
-                  <tr class="hover:bg-white/5 transition-colors">
-                    <td class="px-6 py-4 font-bold">PEPE</td>
-                    <td class="px-6 py-4 text-ok">Bullish Cycle</td>
-                    <td class="px-6 py-4">98/100</td>
-                    <td class="px-6 py-4 text-ok font-bold">+450%</td>
-                    <td class="px-6 py-4 text-right"><span class="px-2 py-0.5 bg-ok/10 text-ok rounded text-[10px] font-bold">HOLD EXIT</span></td>
-                  </tr>
-                  <tr class="hover:bg-white/5 transition-colors">
-                    <td class="px-6 py-4 font-bold">DOGE-X</td>
-                    <td class="px-6 py-4 text-danger">Rug Trap</td>
-                    <td class="px-6 py-4">12/100</td>
-                    <td class="px-6 py-4 text-danger font-bold">-99%</td>
-                    <td class="px-6 py-4 text-right"><span class="px-2 py-0.5 bg-danger/10 text-danger rounded text-[10px] font-bold">BLOQUEADO</span></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- SECCIÓN: CONEXIÓN CLOUD / NOTEBOOK LM -->
-          <div class="glass rounded-3xl p-8 border border-ok/20 bg-ok/5 mt-8 space-y-6">
-            <div class="flex flex-col md:flex-row items-center justify-between gap-6">
-              <div class="space-y-2">
-                <h3 class="text-xl font-bold flex items-center gap-2">
-                  <i data-lucide="cloud-lightning" class="text-ok w-6 h-6"></i>
-                  Sincronización NotebookLM (Cloud)
-                </h3>
-                <p class="text-xs text-slate-400 max-w-xl">
-                  NotebookLM de Google permite analizar profundamente la sabiduría del bot. Pulsa el botón para descargar tu **Base de Conocimientos Consolidada** y subirla a NotebookLM para chatear con la inteligencia de tu bot en la nube.
-                </p>
-              </div>
-              <button id="btnExportKnowledge" class="shrink-0 flex items-center gap-3 bg-ok hover:bg-ok/80 text-bg px-6 py-4 rounded-2xl font-bold transition-all transform hover:scale-105 shadow-lg shadow-ok/20">
-                <i data-lucide="download-cloud" class="w-5 h-5"></i>
-                Descargar para NotebookLM
-              </button>
-            </div>
-            
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-white/5">
-              <div class="space-y-1">
-                <span class="text-[10px] font-bold text-ok uppercase">Paso 1</span>
-                <p class="text-[11px] text-slate-500">Descarga el archivo consolidado (.md) con el botón de arriba.</p>
-              </div>
-              <div class="space-y-1">
-                <span class="text-[10px] font-bold text-ok uppercase">Paso 2</span>
-                <p class="text-[11px] text-slate-500">Ve a <a href="https://notebooklm.google.com/" target="_blank" class="text-accent underline">NotebookLM</a> y crea un nuevo cuaderno.</p>
-              </div>
-              <div class="space-y-1">
-                <span class="text-[10px] font-bold text-ok uppercase">Paso 3</span>
-                <p class="text-[11px] text-slate-500">Sube el archivo descargado como "Fuente" y ¡listo!</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Bottom CTA -->
-          <div class="text-center py-6">
-            <p class="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-4 italic">
-              "El objetivo no es tradear mucho, sino ganar siempre."
-            </p>
-            <div class="flex justify-center gap-4">
-               <div class="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10 text-[10px] text-slate-400">
-                 <div class="w-2 h-2 rounded-full bg-ok"></div> Redes Neuronales Activas
-               </div>
-               <div class="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10 text-[10px] text-slate-400">
-                 <div class="w-2 h-2 rounded-full bg-accent"></div> Auto-Verificación ON
-               </div>
-            </div>
+          
+          <div id="engramsEmpty" class="hidden glass rounded-2xl p-12 text-center text-slate-500 italic">
+            No se han encontrado recuerdos con los criterios actuales.
           </div>
         </div>
 
@@ -751,6 +644,39 @@
           </div>
         </div>
 
+        <!-- Tab: Aether Console -->
+        <div id="tab-terminal" class="tab-content space-y-6">
+           <div class="glass rounded-3xl p-4 md:p-8 bg-black/40 border border-white/5 flex flex-col h-[75vh] md:h-[600px]">
+              <div class="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 shrink-0 gap-4">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-ok/20 rounded-xl flex items-center justify-center border border-ok/30 shrink-0">
+                    <i data-lucide="terminal" class="text-ok w-6 h-6"></i>
+                  </div>
+                  <div>
+                    <h2 class="text-lg font-bold">Aether System Console</h2>
+                    <p class="text-[10px] text-slate-500 font-mono uppercase">Direct SSH Access // Secure Channel</p>
+                  </div>
+                </div>
+                <div class="flex gap-2 w-full md:w-auto">
+                   <button onclick="$('fullTermOut').textContent=''" class="flex-1 md:flex-none px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-bold uppercase transition-all">Limpiar</button>
+                   <button id="btnCopyFullTerm" class="flex-1 md:flex-none px-4 py-2 bg-accent/20 text-accent border border-accent/30 rounded-xl text-[10px] font-bold uppercase transition-all">Copiar Todo</button>
+                </div>
+              </div>
+
+              <div id="fullTermScroll" class="flex-1 overflow-y-auto custom-scrollbar bg-black/60 rounded-2xl p-4 md:p-6 border border-white/5 mb-6">
+                 <div id="fullTermOut" class="font-mono text-[10px] md:text-xs text-ok/80 whitespace-pre-wrap leading-relaxed">
+Welcome to Aether System Terminal.
+Type 'help' for available commands.
+                 </div>
+              </div>
+
+              <div class="relative shrink-0">
+                 <div class="absolute left-4 top-1/2 -translate-y-1/2 text-ok font-mono text-sm">root@aether:~#</div>
+                 <input id="fullTermInput" type="text" class="w-full bg-black/40 border border-ok/20 rounded-2xl pl-24 md:pl-28 pr-6 py-4 text-sm font-mono text-ok focus:border-ok outline-none transition-all shadow-lg shadow-ok/5" autofocus />
+              </div>
+           </div>
+        </div>
+
       </div>
       
       <!-- Footer Info -->
@@ -771,6 +697,19 @@
         set: (key, val) => localStorage.setItem(key, val)
       };
 
+      // Mobile Menu Logic
+      const sidebar = $("sidebar");
+      const btnMobileMenu = $("btnMobileMenu");
+      const btnCloseMenu = $("btnCloseMenu");
+
+      btnMobileMenu.onclick = () => {
+        sidebar.classList.remove("-translate-x-full");
+      };
+
+      btnCloseMenu.onclick = () => {
+        sidebar.classList.add("-translate-x-full");
+      };
+
       // State
       let currentTab = 'signals';
       let isRefreshing = false;
@@ -780,6 +719,7 @@
       const chartImg = $("chartImg");
       const chartContainer = $("chartContainer");
       const staticChartContainer = $("staticChartContainer");
+      const apiBaseInput = $("apiBase");
       const apiKeyInput = $("apiKey");
       const footerClock = $("footerClock");
 
@@ -875,6 +815,8 @@
         btn.addEventListener('click', () => {
           const tab = btn.dataset.tab;
           switchTab(tab);
+          // Close mobile menu
+          sidebar.classList.add("-translate-x-full");
         });
       });
 
@@ -893,30 +835,132 @@
           
           // Trigger tab-specific loads
           if (tabId === 'paper') loadPaperPositions();
-          if (tabId === 'futures') loadFuturesSummary();
+          if (tabId === 'engrams') loadEngrams();
           if (tabId === 'wisdom') loadWisdomAndRules();
           if (tabId === 'stats') loadStats();
+          if (tabId === 'terminal') {
+            setTimeout(() => $("fullTermInput").focus(), 100);
+          }
         }
+      }
+
+      async function termExec(cmd, isFull = false) {
+        if (!cmd) return;
+        const targetOut = isFull ? $("fullTermOut") : out;
+        const targetScroll = isFull ? $("fullTermScroll") : $("outScroll");
+        
+        if (cmd.toLowerCase() === "clear") {
+          targetOut.textContent = "";
+          return;
+        }
+
+        const logLine = `> ${cmd}\n`;
+        if (isFull) targetOut.textContent += logLine + "Ejecutando...\n";
+        else log(logLine + "Ejecutando...");
+
+        try {
+          const res = await api("/api/ssh/exec", { method: "POST", body: { cmd } });
+          let resultText = "";
+          if (res.ok) {
+            resultText = res.output || "Comando ejecutado sin salida.";
+            if (res.err) resultText += `\n[STDERR]\n${res.err}`;
+          } else {
+            resultText = `❌ Error: ${res.error || "Fallo desconocido"}\nPermitidos: uptime, hostname, df -h, free -m, ls -la, pwd, journalctl, ping, curl, date...`;
+          }
+          
+          if (isFull) {
+            targetOut.textContent = targetOut.textContent.replace("Ejecutando...", resultText);
+            targetScroll.scrollTop = targetScroll.scrollHeight;
+          } else {
+            log(`> ${cmd}\n${resultText}`);
+          }
+        } catch (err) {
+          const errMsg = `❌ Error de red o servidor: ${err.message}`;
+          if (isFull) targetOut.textContent += errMsg + "\n";
+          else log(`> ${cmd}\n${errMsg}`);
+        }
+      }
+
+      $("fullTermInput").onkeydown = (e) => {
+        if (e.key === "Enter") {
+          const cmd = $("fullTermInput").value.trim();
+          $("fullTermInput").value = "";
+          termExec(cmd, true);
+        }
+      };
+
+      $("btnCopyFullTerm").onclick = () => {
+        navigator.clipboard.writeText($("fullTermOut").textContent);
+        alert("Consola completa copiada");
+      };
+
+      async function loadEngrams() {
+        const grid = $("engramsGrid");
+        const empty = $("engramsEmpty");
+        try {
+          const res = await api("/api/engrams?limit=12");
+          const items = res.items || [];
+          grid.innerHTML = "";
+          if (items.length === 0) {
+            empty.classList.remove('hidden');
+            return;
+          }
+          empty.classList.add('hidden');
+          items.forEach(it => {
+            const div = document.createElement('div');
+            div.className = "glass rounded-2xl p-6 border border-white/5 hover:border-accent/30 transition-all group";
+            const date = new Date(it.timestamp).toLocaleString();
+            const sentimentColor = it.sentiment_score >= 60 ? 'text-ok' : it.sentiment_score <= 40 ? 'text-danger' : 'text-warn';
+            div.innerHTML = `
+              <div class="flex justify-between items-start mb-4">
+                <span class="px-2 py-1 bg-accent/10 text-accent rounded text-[10px] font-bold uppercase tracking-widest">${it.symbol}</span>
+                <span class="text-[9px] text-slate-500 font-mono">${date}</span>
+              </div>
+              <p class="text-xs text-slate-300 leading-relaxed mb-4 line-clamp-4">${it.content}</p>
+              <div class="flex justify-between items-center pt-4 border-t border-white/5">
+                <div class="flex items-center gap-1.5">
+                  <div class="w-1.5 h-1.5 rounded-full bg-accent"></div>
+                  <span class="text-[10px] text-slate-500 uppercase font-bold">${it.source}</span>
+                </div>
+                <span class="text-[10px] font-bold ${sentimentColor}">${it.sentiment_score}% Sentiment</span>
+              </div>
+            `;
+            grid.appendChild(div);
+          });
+        } catch (e) { console.error(e); }
       }
 
       // API Core
       async function api(path, opts = {}) {
         let token = apiKeyInput.value.trim();
+        let base = apiBaseInput.value.trim().replace(/\/+$/, "");
         
-        // If the user hasn't typed anything, try saved key or default
-        if (!token) {
-          token = storage.get("bot_api_key") || "AETHER_2026";
-        }
+        // Auto-correct common incomplete inputs
+        if (base === "http://localhost") base = "http://localhost:8787";
+        if (base === "localhost") base = "http://localhost:8787";
         
-        // Save to storage if it's a non-default key
-        if (token && token !== "AETHER_2026") {
-          storage.set("bot_api_key", token);
-          // If the input was empty but we found a saved key, show it
-          if (!apiKeyInput.value) apiKeyInput.value = token;
+        // Load from storage if empty
+        if (!token) token = storage.get("bot_api_key") || "AETHER_2026";
+        if (!base) {
+          base = storage.get("bot_api_base");
+          if (!base) {
+            const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+            base = isLocal ? "http://localhost:8787" : "https://api.aetherconnectlabs.software";
+          }
         }
 
+        // Save to storage
+        storage.set("bot_api_key", token);
+        storage.set("bot_api_base", base);
+        
+        // Update inputs if they were different
+        if (apiKeyInput.value !== token && !apiKeyInput.matches(':focus')) apiKeyInput.value = token;
+        if (apiBaseInput.value !== base && !apiBaseInput.matches(':focus')) apiBaseInput.value = base;
+
+        const url = `${base}${path}`;
+
         try {
-          const res = await fetch(path, {
+          const res = await fetch(url, {
             method: opts.method || "GET",
             headers: {
               "content-type": "application/json",
@@ -935,7 +979,7 @@
           }
           return data;
         } catch (e) {
-          console.error(`API Error [${path}]:`, e);
+          console.error(`API Error [${url}]:`, e);
           throw e;
         }
       }
@@ -944,9 +988,25 @@
       function log(msg, type = 'info') {
         out.classList.remove('hidden');
         newsContainer.classList.add('hidden');
-        out.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2);
-        out.scrollTop = 0;
+        const text = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2);
+        
+        // Si el mensaje es una continuación de terminal (empieza por >), lo añadimos
+        if (text.startsWith(">")) {
+          out.textContent += "\n" + text;
+        } else {
+          out.textContent = text;
+        }
+        
+        // Auto-scroll al final
+        setTimeout(() => {
+          $("outScroll").scrollTop = $("outScroll").scrollHeight;
+        }, 50);
       }
+
+      $("btnCopyTerm").onclick = () => {
+        navigator.clipboard.writeText(out.textContent);
+        alert("Consola copiada al portapapeles");
+      };
 
       function showNews(res) {
         if (!res || res.ok === false) {
@@ -1138,9 +1198,20 @@
           btn.disabled = false;
 
           if (res.ok && res.result) {
-            const data = res.result;
+            let data = res.result;
+            
+            // Si la data viene como string (fallback de seguridad), intentar parsear
+            if (typeof data === 'string') {
+              try {
+                const clean = data.replace(/```json/g, "").replace(/```/g, "").trim();
+                data = JSON.parse(clean);
+              } catch (e) {
+                console.error("No se pudo parsear el resultado de la IA:", data);
+              }
+            }
+
             // Actualizar Salud
-            $("diagLiq").textContent = data.seguridad?.liq || "—";
+            $("diagLiq").textContent = data.seguridad?.liq || data.seguridad?.score || "—";
             $("diagRenounced").textContent = data.seguridad?.score > 50 ? "SI" : "NO";
             $("diagTax").textContent = data.seguridad?.tax || "0%/0%";
             $("diagHolders").textContent = data.seguridad?.holders || "—";
@@ -1150,15 +1221,61 @@
             $("diagSmartMoney").textContent = data.algoritmo?.smart_money || "—";
             $("diagSocial").textContent = data.algoritmo?.social || "—";
             
-            // Actualizar Veredicto
+            // Actualizar Veredicto (Formato de Señal Profesional)
             const v = $("memeVerdict");
-            v.textContent = data.prediccion?.veredicto || "—";
-            v.className = `text-4xl font-black py-4 ${data.prediccion?.veredicto === 'HOLD' ? 'text-ok' : data.prediccion?.veredicto === 'TRADE' ? 'text-accent' : 'text-danger'}`;
+            const p = data.prediccion || {};
+            
+            v.textContent = p.veredicto || data.veredicto || "—";
+            v.className = `text-4xl font-black py-4 ${p.veredicto === 'HOLD' ? 'text-ok' : p.veredicto === 'TRADE' ? 'text-accent' : 'text-danger'}`;
             
             $("memeVerdictReason").innerHTML = `
-              <strong>Target:</strong> <span class="text-ok">${data.prediccion?.target || '—'}</span><br>
-              <strong>Tiempo:</strong> ${data.prediccion?.tiempo || '—'}<br>
-              <p class="mt-2 text-slate-300">"${data.razon || ''}"</p>
+              <div class="space-y-3 text-left font-mono text-[10px] bg-black/20 p-4 rounded-xl border border-white/5">
+                <div class="flex justify-between border-b border-white/5 pb-1">
+                  <span class="text-slate-500 uppercase">Token (Exchange)</span>
+                  <span class="text-white font-bold">${symbol} (Exchange)</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-500">TF:</span>
+                  <span class="text-white">15m</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-500">Señal:</span>
+                  <span class="${p.signal === 'LONG' ? 'text-ok' : 'text-danger'} font-bold">${p.signal || 'NEUTRAL'}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-500">Entrada aprox:</span>
+                  <span class="text-white">${p.entry || '—'}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-500">StopLoss:</span>
+                  <span class="text-danger">${p.sl || '—'}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-500">TakeProfit1:</span>
+                  <span class="text-ok">${p.tp1 || '—'}</span>
+                </div>
+                <div class="flex justify-between border-b border-white/5 pb-1">
+                  <span class="text-slate-500">TakeProfit2:</span>
+                  <span class="text-ok">${p.tp2 || '—'}</span>
+                </div>
+                <div class="text-[9px] text-slate-500 italic">EMA(12/21) RSI(14) ATR(14)</div>
+                <div class="flex justify-between">
+                  <span class="text-slate-500">RSI: ${p.rsi || '—'} | ATR: ${p.atr || '—'}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-500">Adaptación: score ${p.score || '0'} | confianza ${p.confianza || '0'}</span>
+                </div>
+                <div class="text-slate-400">Estrategia: ${p.estrategia || '—'} | Tendencia: ${p.tendencia || '—'}</div>
+                <div class="text-accent font-bold pt-1 border-t border-white/5">📰 Sentimiento: ${p.sentiment || '—'}</div>
+                
+                <div class="mt-4 pt-3 border-t border-white/10">
+                  <div class="${p.guardia === 'PERMITIR' ? 'text-ok' : 'text-danger'} font-black flex items-center gap-2">
+                    <i data-lucide="${p.guardia === 'PERMITIR' ? 'check-circle' : 'slash'}" class="w-3 h-3"></i>
+                    ${p.guardia === 'PERMITIR' ? '🛡️ GUARDIA: PERMITIR' : '🚫 GUARDIA: BLOQUEAR'}
+                  </div>
+                  <div class="text-slate-500 text-[9px] mt-1">${p.guardia_razon || ''}</div>
+                </div>
+              </div>
             `;
             
             lucide.createIcons();
@@ -1440,83 +1557,66 @@
 
       // Background Monitoring
       async function monitor() {
-        console.log("Monitor starting...");
-        // Health check (No Auth needed)
+        const start = Date.now();
+        let base = apiBaseInput.value.trim().replace(/\/+$/, "");
+        if (!base) base = storage.get("bot_api_base") || (location.hostname === 'localhost' ? "http://localhost:8787" : "https://api.aetherconnectlabs.software");
+        
+        console.log(`[MONITOR] Checking connection to: ${base}`);
+
+        // Health check
         try {
           const h = await api("/api/health");
-          console.log("Health check result:", h);
+          const lat = Date.now() - start;
+          $("headerLatency").textContent = `${lat}ms`;
+          $("headerLatency").className = lat < 150 ? "font-mono text-ok" : lat < 500 ? "font-mono text-warn" : "font-mono text-danger";
+
           if (h && h.ok) {
             $("healthVal").textContent = "ONLINE";
             $("healthVal").className = "font-medium text-ok";
             $("statusDot").className = "w-2 h-2 rounded-full bg-ok";
-          } else {
-            throw new Error("health_not_ok");
+            $("headerStatusDot").className = "w-1.5 h-1.5 rounded-full bg-ok animate-pulse";
           }
         } catch (e) {
-          const errStatus = e.status || "ERR";
-          $("healthVal").textContent = `OFFLINE (${errStatus})`;
+          $("healthVal").textContent = "OFF";
           $("healthVal").className = "font-medium text-danger";
           $("statusDot").className = "w-2 h-2 rounded-full bg-danger animate-pulse";
-          console.warn("Monitor Health Error:", e.message);
+          $("headerStatusDot").className = "w-1.5 h-1.5 rounded-full bg-danger animate-pulse";
+          $("headerLatency").textContent = "—";
         }
 
-        // Meta/Auth check (Needs Auth)
+        // Meta/Auth check
         try {
-          console.log("Meta check starting...");
           const m = await api("/api/meta");
-          console.log("Meta check result:", m);
-          
           if (m && m.ok) {
-            // Health is confirmed if meta works
-            $("healthVal").textContent = "ONLINE";
-            $("healthVal").className = "font-medium text-ok";
-            $("statusDot").className = "w-2 h-2 rounded-full bg-ok";
-
             if (m.authorized) {
               $("authVal").textContent = "AUTHORIZED";
               $("authVal").className = "font-medium text-ok";
             } else {
-              $("authVal").textContent = "KEY ERROR";
+              $("authVal").textContent = "ERROR";
               $("authVal").className = "font-medium text-danger";
             }
-            
-            if (m.globalBrain === "connected") {
-              $("brainVal").textContent = "GLOBAL";
-              $("brainVal").className = "font-medium text-accent italic";
-            }
-            
-            if (m.sshTarget) {
-              $("sshTargetVal").textContent = m.sshTarget;
-            }
-
-            // SSH & VPS Status
-            try {
-              const ssh = await api("/api/ssh/status");
-              if (ssh && ssh.ok) {
-                $("sshVal").textContent = "CONNECTED";
-                $("sshVal").className = "text-ok";
-                $("vpsStats").classList.remove('hidden');
-                // Format uptime
-                let uptimeStr = ssh.output || "—";
-                if (uptimeStr.includes("up")) {
-                  uptimeStr = uptimeStr.split("up")[1].split(",")[0].trim();
-                }
-                $("vpsUptime").textContent = uptimeStr;
-              } else {
-                $("sshVal").textContent = "ERROR";
-                $("sshVal").className = "text-warn";
-              }
-            } catch (sshErr) {
-              $("sshVal").textContent = "DISCONNECTED";
-              $("sshVal").className = "text-danger";
-            }
+            if (m.sshTarget) $("sshTargetVal").textContent = m.sshTarget;
           }
         } catch (e) {
-          // If meta fails (network or other error), only update Auth status
-          const errStatus = e.status || "ERR";
-          $("authVal").textContent = `OFFLINE (${errStatus})`;
+          $("authVal").textContent = "ERROR";
           $("authVal").className = "font-medium text-danger";
-          console.warn("Monitor Meta Error:", e.message);
+        }
+
+        // SSH/VPS Status
+        try {
+          const ssh = await api("/api/ssh/status");
+          if (ssh && ssh.ok) {
+            $("sshVal").textContent = "CONNECTED";
+            $("sshVal").className = "text-ok";
+            $("vpsStats").classList.remove('hidden');
+            let uptimeStr = ssh.output || "—";
+            if (uptimeStr.includes("up")) uptimeStr = uptimeStr.split("up")[1].split(",")[0].trim();
+            $("vpsUptime").textContent = uptimeStr;
+            $("headerUptime").textContent = uptimeStr;
+          }
+        } catch (e) {
+          $("sshVal").textContent = "WAITING";
+          $("sshVal").className = "text-slate-500";
         }
       }
 
@@ -1524,6 +1624,65 @@
       $("btnRefresh").onclick = () => {
         monitor();
         switchTab(currentTab);
+      };
+
+      // VPS Management Handlers
+      $("btnVpsLogs").onclick = async () => {
+        log("🔍 Obteniendo logs del servicio...");
+        try {
+          const res = await api("/api/ssh/exec", { method: "POST", body: { cmd: "journalctl -u trading-bot-api -n 50 --no-pager" } });
+          if (res.ok) log(res.output || "No hay logs recientes.");
+          else log("❌ Error: " + (res.error || "No se pudieron obtener los logs."));
+        } catch (e) { showErr(e); }
+      };
+
+      $("btnVpsRestart").onclick = async () => {
+        if (!confirm("¿Seguro que quieres reiniciar el servicio del bot? Esto detendrá las operaciones en curso momentáneamente.")) return;
+        log("🔄 Reiniciando servicios en VPS...");
+        try {
+          // El comando de reinicio no está en el allowlist estricto de exec.js pero lo añadimos arriba en api.js
+          const res = await api("/api/ssh/exec", { method: "POST", body: { cmd: "systemctl status trading-bot-api" } });
+          log("Estado actual:\n" + (res.output || "Servicio no encontrado."));
+          alert("Por seguridad, el reinicio total debe hacerse vía SSH o mediante un comando permitido específico.");
+        } catch (e) { showErr(e); }
+      };
+
+      // Terminal Handler
+      $("termInput").onkeydown = async (e) => {
+        if (e.key === "Enter") {
+          const cmd = $("termInput").value.trim();
+          $("termInput").value = "";
+          termExec(cmd, false);
+        }
+      };
+
+      $("btnLoadEngrams").onclick = () => loadEngrams();
+
+      $("btnExportNotebookLM").onclick = async () => {
+        const token = storage.get("bot_api_key") || "AETHER_2026";
+        const base = (storage.get("bot_api_base") || "").replace(/\/+$/, "");
+        const url = `${base}/api/wisdom/export?authorization=Bearer ${token}`;
+        window.open(url, '_blank');
+      };
+
+      $("btnImportNotebookLM").onclick = async () => {
+        const text = window.prompt("Pega aquí el texto que quieres importar (ej: respuesta de NotebookLM):");
+        if (!text || text.trim().length < 10) return;
+        
+        try {
+          const res = await api("/api/wisdom/import", {
+            method: "POST",
+            body: { text, symbol: "GLOBAL" }
+          });
+          if (res.ok) {
+            alert(`✅ Se han importado ${res.importedCount} bloques de memoria.`);
+            loadEngrams();
+          } else {
+            alert("❌ Error: " + (res.error || "Fallo desconocido"));
+          }
+        } catch (e) {
+          alert("❌ Error de red: " + e.message);
+        }
       };
 
       // Clock

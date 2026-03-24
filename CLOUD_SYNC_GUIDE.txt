@@ -1,29 +1,40 @@
-/**
- * GUÍA DE SINCRONIZACIÓN CON LA NUBE (GOOGLE DRIVE / NOTEBOOK LM)
- * 
- * Para que NotebookLM tenga acceso siempre actualizado a la sabiduría de tu bot,
- * sigue estos pasos dependiendo de tu sistema:
- * 
- * OPCIÓN A: WINDOWS (Google Drive para Escritorio)
- * 1. Instala Google Drive para Escritorio.
- * 2. En la configuración de Google Drive, añade la carpeta:
- *    "c:\Users\Alumno.LAPTOP-72MR2U1M\Music\Trading_bot\trading_notes"
- * 3. Google Drive mantendrá todos los archivos .md sincronizados en la nube.
- * 4. En NotebookLM, selecciona "Google Drive" como fuente y elige la carpeta o archivos.
- * 
- * OPCIÓN B: LINUX / VPS (rclone)
- * 1. Instala rclone (sudo apt install rclone).
- * 2. Configura tu Google Drive (rclone config).
- * 3. Ejecuta el comando de sincronización:
- *    rclone sync ./trading_notes gdrive:TradingBot/wisdom
- * 4. Añade un cronjob para que se ejecute cada hora.
- * 
- * OPCIÓN C: EXPORTACIÓN MANUAL (DASHBOARD)
- * 1. Ve a la pestaña "¿Cómo funciona?" en el Dashboard.
- * 2. Pulsa "Descargar para NotebookLM".
- * 3. Sube el archivo AETHER_KNOWLEDGE_BASE.md directamente a NotebookLM.
- */
+🚀 GUÍA DE CONEXIÓN MAESTRA: SSH + IA (AETHER TRADING BOT)
 
-console.log("--- Sistema de Conexión Cloud Aether ---");
-console.log("Ruta de sabiduría local: c:\\Users\\Alumno.LAPTOP-72MR2U1M\\Music\\Trading_bot\\trading_notes");
-console.log("Para conectar con NotebookLM, usa el botón de exportación en el Dashboard Web.");
+Para que tu Terminal de Memes conecte correctamente con el servidor root@161.35.107.114 y la IA de DeepSeek, sigue estos 3 pasos exactos:
+
+---
+
+PASO 1: CONFIGURACIÓN DEL ARCHIVO .ENV (EL CEREBRO)
+Crea o edita el archivo .env en la raíz de tu proyecto (C:\Users\Alumno.LAPTOP-72MR2U1M\Music\Trading_bot) y añade estas líneas:
+
+DEEPSEEK_KEY=TU_API_KEY_AQUI_SIN_ESPACIOS
+TRADING_BOT_API_KEY=AETHER_2026
+SSH_HOST=161.35.107.114
+SSH_USER=root
+SSH_PASS=TU_CONTRASEÑA_SSH_AQUI  <-- (Opcional si usas contraseña)
+SSH_KEY_PATH=C:\Ruta\A\Tu\Clave.pem  <-- (Opcional si usas clave privada)
+
+---
+
+PASO 2: ACTIVACIÓN DEL SERVIDOR API
+Abre una terminal en VS Code y ejecuta:
+> npm run api
+
+Verás un mensaje: [API] listening on http://0.0.0.0:8787
+
+---
+
+PASO 3: SINCRONIZACIÓN DEL DASHBOARD
+1. Abre tu navegador en: http://localhost:8787
+2. En la parte superior derecha (API Key), escribe: AETHER_2026
+3. Pulsa el botón de "Refrescar" (icono de flechas circulares).
+
+RESULTADO ESPERADO:
+- Health: ONLINE (Verde)
+- API Auth: AUTHORIZED (Verde)
+- Brain: GLOBAL (Azul)
+- api.aetherconnectlabs.software: CONNECTED (Verde)
+
+---
+
+¡LISTO! Ahora puedes ir a la 'Meme Terminal', poner el nombre de una moneda y la IA responderá con el diagnóstico técnico profesional y el target de ganancias. 🚀💎🤖📈

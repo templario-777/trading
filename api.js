@@ -223,8 +223,21 @@ function isAllowedSshCommand(cmd) {
     "df -h",
     "free -m",
     "cat /etc/os-release",
-    "ls -la /tmp"
-  ];
+    "ls -la /tmp",
+    "ls -la",
+    "pwd",
+    "whoami",
+    "systemctl status trading-bot-api",
+    "systemctl status trading-bot",
+    "journalctl -u trading-bot-api -n 50 --no-pager",
+      "journalctl -u trading-bot -n 50 --no-pager",
+      "git log -1 --oneline",
+      "top -b -n 1",
+      "ping -c 4 1.1.1.1",
+      "curl -I https://api.binance.com",
+      "date",
+      "ps aux | grep node"
+    ];
   const sanitized = String(cmd).trim();
   if (allowlist.includes(sanitized)) return true;
   return false;
@@ -251,18 +264,11 @@ function isRuleEntry(entry) {
 }
 
 function buildCorsHeaders(req) {
-  const origin = String(req.headers.origin ?? "").trim();
-  if (!origin) return {
+  return {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "authorization,content-type"
-  };
-  return {
-    "access-control-allow-origin": origin,
-    "access-control-allow-methods": "GET,POST,OPTIONS",
     "access-control-allow-headers": "authorization,content-type",
-    "access-control-max-age": "86400",
-    vary: "origin"
+    "access-control-max-age": "86400"
   };
 }
 
@@ -331,6 +337,7 @@ async function handle(req, res) {
 
     if (req.method === "GET" && path === "/api/meta") {
       const deepseekKey = Boolean(getEnvAny(["DEEPSEEK_KEY", "DEEPSEEK_API_KEY"]));
+      const geminiKey = Boolean(getEnvAny(["GEMINI_API_KEY", "GOOGLE_API_KEY"]));
       const apiKeyEnabled = Boolean(getEnvAny(["TRADING_BOT_API_KEY"])) && !isLocalRequest(req);
       
       let key = getEnvAny(["TRADING_BOT_API_KEY"]) || "AETHER_2026";
@@ -345,7 +352,7 @@ async function handle(req, res) {
       const sshUser = String(process.env.SSH_USER ?? "root").trim();
       
       const authorized = Boolean(token) && token === key;
-      console.log(`[META_CHECK] Authorized: ${authorized} | Token: ${token.slice(0, 4)}... | Key: ${key.slice(0, 4)}...`);
+      console.log(`[META_CHECK] Authorized: ${authorized} | SSH: ${sshUser}@${sshHost}`);
       
       sendJson(
         res,
@@ -354,6 +361,7 @@ async function handle(req, res) {
           ok: true,
           ts: new Date().toISOString(),
           deepseekKey,
+          geminiKey,
           apiKeyEnabled,
           authorized,
           sshTarget: `${sshUser}@${sshHost}`,
@@ -361,6 +369,18 @@ async function handle(req, res) {
         },
         cors
       );
+      return;
+    }
+
+    if (req.method === "GET" && path === "/api/engrams") {
+      const symbol = url.searchParams.get("symbol") || "GLOBAL";
+      const limit = Number(url.searchParams.get("limit") || "10");
+      try {
+        const items = await getRecentEngrams(symbol, limit);
+        sendJson(res, 200, { ok: true, items }, cors);
+      } catch (e) {
+        sendJson(res, 500, { error: "db_error", details: e.message }, cors);
+      }
       return;
     }
 
@@ -713,6 +733,19 @@ async function handle(req, res) {
       return;
     }
 
+    if (req.method === "POST" && path === "/api/wisdom/import") {
+      const body = (await readJsonBody(req)) ?? {};
+      const text = String(body.text ?? "").trim();
+      const symbol = String(body.symbol ?? "GLOBAL").toUpperCase();
+      if (!text) {
+        sendJson(res, 400, { error: "text_required" }, cors);
+        return;
+      }
+      const result = await importNotebookLMKnowledge({ text, symbol });
+      sendJson(res, 200, result, cors);
+      return;
+    }
+
     if (req.method === "POST" && path === "/api/meme/analyze") {
       try {
         const body = await readJsonBody(req);
@@ -730,11 +763,23 @@ async function handle(req, res) {
         }
         
         // La IA usa su propia clave del .env internamente en lib.js
-        const result = await analyzeMemeWithAI({ tokenSymbol: symbol });
+        const resultRaw = await analyzeMemeWithAI({ tokenSymbol: symbol });
         
-        if (!result) {
+        if (!resultRaw) {
           sendJson(res, 500, { error: "ai_failed", message: "La IA no pudo procesar el análisis. Revisa la clave DEEPSEEK_KEY en tu .env" }, cors);
           return;
+        }
+
+        // Si resultRaw es un string, intentamos parsearlo como JSON
+        let result = resultRaw;
+        if (typeof resultRaw === "string") {
+          try {
+            // Limpiar posibles bloques de código markdown ```json ... ```
+            const cleanJson = resultRaw.replace(/```json/g, "").replace(/```/g, "").trim();
+            result = JSON.parse(cleanJson);
+          } catch (e) {
+            console.warn("[MEME_PARSE_WARN] No se pudo parsear la respuesta de la IA como JSON:", resultRaw);
+          }
         }
         
         sendJson(res, 200, { ok: true, result }, cors);
