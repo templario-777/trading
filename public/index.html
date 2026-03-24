@@ -1138,7 +1138,7 @@ Type 'help' for available commands.
 
         try {
           const headers = { "content-type": "application/json" };
-          if (base && token) headers.authorization = `Bearer ${token}`;
+          if (token) headers.authorization = `Bearer ${token}`;
           const res = await fetch(url, {
             method: opts.method || "GET",
             headers,

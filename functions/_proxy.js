@@ -37,7 +37,7 @@ async function proxy({ request, env, method, path, body, queryString }) {
   
   const envKey = envGet(env, "BOT_API_KEY");
   const reqAuth = request.headers.get("authorization");
-  const auth = envKey ? `Bearer ${envKey}` : reqAuth;
+  const auth = reqAuth || (envKey ? `Bearer ${envKey}` : "");
   if (!auth) return json({ error: "missing_env", env: "BOT_API_KEY" }, 500);
 
   const upstreamRes = await fetch(upstream, {
