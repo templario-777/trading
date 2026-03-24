@@ -1238,7 +1238,9 @@ Type 'help' for available commands.
           list.innerHTML = `<p class="text-[10px] text-slate-500 italic p-2 text-center">No hay titulares.</p>`;
         }
         newsContainer.appendChild(list);
-        lucide.createIcons();
+        if (window.lucide?.createIcons) {
+          window.lucide.createIcons();
+        }
       }
 
       function showErr(e) {
@@ -1453,7 +1455,9 @@ Type 'help' for available commands.
               </div>
             `;
             
-            lucide.createIcons();
+            if (window.lucide?.createIcons) {
+              window.lucide.createIcons();
+            }
           } else {
             alert("❌ Error en el análisis de IA: " + (res.error || "Fallo desconocido"));
           }
