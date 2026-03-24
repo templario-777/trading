@@ -7,7 +7,7 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
     <!-- TradingView Lightweight Charts -->
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script>
@@ -926,7 +926,9 @@ Type 'help' for available commands.
       }
 
       // Initialize Icons
-      lucide.createIcons();
+      if (window.lucide?.createIcons) {
+        window.lucide.createIcons();
+      }
 
       // Navigation
       document.querySelectorAll('.tab-btn').forEach(btn => {
