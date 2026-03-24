@@ -137,7 +137,7 @@
             <span id="brainVal" class="font-medium text-accent italic">GLOBAL</span>
           </div>
           <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 text-[10px]">
-            <span id="sshTargetVal" class="text-slate-400 font-mono">api.aetherconnectlabs.software</span>
+            <span id="sshTargetVal" class="text-slate-400 font-mono">AUTO</span>
             <span id="sshVal" class="text-slate-500">WAITING</span>
           </div>
           <div id="vpsStats" class="space-y-1 mt-2 hidden">
@@ -797,6 +797,24 @@ Type 'help' for available commands.
         set: (key, val) => localStorage.setItem(key, val)
       };
 
+      function normalizeBaseUrl(raw) {
+        let base = String(raw ?? "").trim().replace(/\/+$/, "");
+        if (!base) return "";
+        if (base === "http://localhost") base = "http://localhost:8787";
+        if (base === "localhost") base = "http://localhost:8787";
+        if (/^(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0)(:\\d+)?$/i.test(base)) {
+          if (!base.includes(":")) base = `${base}:8787`;
+          return `http://${base}`;
+        }
+        if (/^https?:\\/\\//i.test(base)) return base;
+        if (base.startsWith("//")) return `https:${base}`;
+        return `https://${base}`;
+      }
+
+      function isDeprecatedBaseUrl(base) {
+        return /aetherconnectlabs\\.software/i.test(String(base ?? ""));
+      }
+
       // Mobile Menu Logic
       const sidebar = $("sidebar");
       const btnMobileMenu = $("btnMobileMenu");
@@ -1032,9 +1050,12 @@ Type 'help' for available commands.
       }
 
       function updateNotebookHub() {
-        const token = storage.get("bot_api_key") || "AETHER_2026";
-        const base = (storage.get("bot_api_base") || "").replace(/\/+$/, "");
-        const sourceUrl = `${base}/api/wisdom/export?authorization=Bearer ${token}`;
+        const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+        let base = apiBaseInput.value.trim().replace(/\/+$/, "");
+        if (!base) base = (storage.get("bot_api_base") || "").replace(/\/+$/, "");
+        base = normalizeBaseUrl(base);
+        if (!base) base = isLocal ? "http://localhost:8787" : location.origin.replace(/\/+$/, "");
+        const sourceUrl = `${base}/api/wisdom/export`;
         $("notebookSourceUrl").value = sourceUrl;
       }
 
@@ -1089,20 +1110,17 @@ Type 'help' for available commands.
 
       // API Core
       async function api(path, opts = {}) {
+        const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
         let token = apiKeyInput.value.trim();
-        let base = apiBaseInput.value.trim().replace(/\/+$/, "");
-        
-        // Auto-correct common incomplete inputs
-        if (base === "http://localhost") base = "http://localhost:8787";
-        if (base === "localhost") base = "http://localhost:8787";
+        let base = normalizeBaseUrl(apiBaseInput.value);
         
         // Load from storage if empty
-        if (!token) token = storage.get("bot_api_key") || "AETHER_2026";
+        if (!token) token = storage.get("bot_api_key") || (isLocal ? "AETHER_2026" : "");
         if (!base) {
-          base = storage.get("bot_api_base");
+          base = normalizeBaseUrl(storage.get("bot_api_base"));
+          if (isDeprecatedBaseUrl(base)) base = "";
           if (!base) {
-            const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-            base = isLocal ? "http://localhost:8787" : "https://api.aetherconnectlabs.software";
+            base = isLocal ? "http://localhost:8787" : "";
           }
         }
 
@@ -1117,12 +1135,11 @@ Type 'help' for available commands.
         const url = `${base}${path}`;
 
         try {
+          const headers = { "content-type": "application/json" };
+          if (base && token) headers.authorization = `Bearer ${token}`;
           const res = await fetch(url, {
             method: opts.method || "GET",
-            headers: {
-              "content-type": "application/json",
-              "authorization": `Bearer ${token}`
-            },
+            headers,
             body: opts.body ? JSON.stringify(opts.body) : undefined
           });
 
@@ -1334,8 +1351,7 @@ Type 'help' for available commands.
 
       $("btnExportKnowledge").onclick = async () => {
         try {
-          let token = apiKeyInput.value.trim() || storage.get("bot_api_key") || "AETHER_2026";
-          const url = `/api/wisdom/export?authorization=Bearer ${token}`;
+          const url = `/api/wisdom/export`;
           window.open(url, '_blank');
         } catch (e) { alert("Error al exportar: " + e.message); }
       };
@@ -1715,23 +1731,34 @@ Type 'help' for available commands.
       // Background Monitoring
       async function monitor() {
         const start = Date.now();
-        let base = apiBaseInput.value.trim().replace(/\/+$/, "");
-        if (!base) base = storage.get("bot_api_base") || (location.hostname === 'localhost' ? "http://localhost:8787" : "https://api.aetherconnectlabs.software");
+        let base = normalizeBaseUrl(apiBaseInput.value);
+        if (!base) base = normalizeBaseUrl(storage.get("bot_api_base"));
+        if (isDeprecatedBaseUrl(base)) base = "";
+        if (!base) base = location.hostname === 'localhost' ? "http://localhost:8787" : "";
+
+        storage.set("bot_api_base", base);
+        if (apiBaseInput.value !== base && !apiBaseInput.matches(':focus')) apiBaseInput.value = base;
         
         console.log(`[MONITOR] Checking connection to: ${base}`);
 
         // Health check
         try {
-          const h = await api("/api/health");
+          const res = await fetch(`${base}/api/health`, { method: "GET" });
+          const h = await res.json().catch(() => null);
           const lat = Date.now() - start;
           $("headerLatency").textContent = `${lat}ms`;
           $("headerLatency").className = lat < 150 ? "font-mono text-ok" : lat < 500 ? "font-mono text-warn" : "font-mono text-danger";
 
-          if (h && h.ok) {
+          if (res.ok && h && h.ok) {
             $("healthVal").textContent = "ONLINE";
             $("healthVal").className = "font-medium text-ok";
             $("statusDot").className = "w-2 h-2 rounded-full bg-ok";
             $("headerStatusDot").className = "w-1.5 h-1.5 rounded-full bg-ok animate-pulse";
+          } else {
+            $("healthVal").textContent = "OFF";
+            $("healthVal").className = "font-medium text-danger";
+            $("statusDot").className = "w-2 h-2 rounded-full bg-danger animate-pulse";
+            $("headerStatusDot").className = "w-1.5 h-1.5 rounded-full bg-danger animate-pulse";
           }
         } catch (e) {
           $("healthVal").textContent = "OFF";
@@ -1742,19 +1769,16 @@ Type 'help' for available commands.
         }
 
         // Meta/Auth check
+        let metaOk = false;
         try {
-          const m = await api("/api/meta");
-          if (m && m.ok) {
-            if (m.authorized) {
-              $("authVal").textContent = "AUTHORIZED";
-              $("authVal").className = "font-medium text-ok";
-            } else {
-              $("authVal").textContent = "ERROR";
-              $("authVal").className = "font-medium text-danger";
-            }
+          const res = await fetch(`${base}/api/meta`, { method: "GET" });
+          const m = await res.json().catch(() => null);
+          if (res.ok && m && m.ok) {
+            metaOk = true;
+            $("authVal").textContent = "UNAUTHORIZED";
+            $("authVal").className = "font-medium text-warn";
             if (m.sshTarget) $("sshTargetVal").textContent = m.sshTarget;
 
-            // NotebookLM / Gemini Status
             const geminiDot = $("geminiStatusDot");
             const geminiText = $("geminiStatusText");
             if (geminiDot && geminiText) {
@@ -1768,10 +1792,32 @@ Type 'help' for available commands.
                 geminiText.className = "text-[10px] font-bold uppercase text-purple-300";
               }
             }
+          } else {
+            metaOk = false;
+            $("authVal").textContent = "ERROR";
+            $("authVal").className = "font-medium text-danger";
           }
         } catch (e) {
+          metaOk = false;
           $("authVal").textContent = "ERROR";
           $("authVal").className = "font-medium text-danger";
+        }
+
+        if (metaOk) {
+          try {
+            const m = await api("/api/meta");
+            if (m && m.ok) {
+              if (m.authorized) {
+                $("authVal").textContent = "AUTHORIZED";
+                $("authVal").className = "font-medium text-ok";
+              } else {
+                $("authVal").textContent = "UNAUTHORIZED";
+                $("authVal").className = "font-medium text-warn";
+              }
+              if (m.sshTarget) $("sshTargetVal").textContent = m.sshTarget;
+            }
+          } catch {
+          }
         }
 
         // SSH/VPS Status
@@ -1787,8 +1833,13 @@ Type 'help' for available commands.
             $("headerUptime").textContent = uptimeStr;
           }
         } catch (e) {
-          $("sshVal").textContent = "WAITING";
-          $("sshVal").className = "text-slate-500";
+          if (Number(e?.status) === 401 || String(e?.data?.error ?? "") === "unauthorized") {
+            $("sshVal").textContent = "UNAUTHORIZED";
+            $("sshVal").className = "text-warn";
+          } else {
+            $("sshVal").textContent = "WAITING";
+            $("sshVal").className = "text-slate-500";
+          }
         }
       }
 
@@ -1831,9 +1882,12 @@ Type 'help' for available commands.
       $("btnLoadEngrams").onclick = () => loadEngrams();
 
       $("btnExportNotebookLM").onclick = async () => {
-        const token = storage.get("bot_api_key") || "AETHER_2026";
-        const base = (storage.get("bot_api_base") || "").replace(/\/+$/, "");
-        const url = `${base}/api/wisdom/export?authorization=Bearer ${token}`;
+        const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+        let base = apiBaseInput.value.trim().replace(/\/+$/, "");
+        if (!base) base = (storage.get("bot_api_base") || "").replace(/\/+$/, "");
+        base = normalizeBaseUrl(base);
+        if (!base) base = isLocal ? "http://localhost:8787" : location.origin.replace(/\/+$/, "");
+        const url = `${base}/api/wisdom/export`;
         window.open(url, '_blank');
       };
 
@@ -1863,6 +1917,15 @@ Type 'help' for available commands.
       }, 1000);
 
       // Initial Load
+      const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      const initToken = storage.get("bot_api_key") || (isLocal ? "AETHER_2026" : "");
+      const initBase =
+        (isDeprecatedBaseUrl(storage.get("bot_api_base")) ? "" : normalizeBaseUrl(storage.get("bot_api_base"))) ||
+        (isLocal ? "http://localhost:8787" : "");
+      if (!apiKeyInput.value) apiKeyInput.value = initToken;
+      if (!apiBaseInput.value) apiBaseInput.value = initBase;
+      storage.set("bot_api_key", initToken);
+      storage.set("bot_api_base", initBase);
       monitor();
       setInterval(monitor, 30000);
       

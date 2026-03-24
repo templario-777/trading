@@ -40,6 +40,7 @@ import {
   trackSignal,
   learnFromUserFeedback,
   consolidateAetherKnowledge,
+  importNotebookLMKnowledge,
   analyzeMemeWithAI
 } from "./lib.js";
 
@@ -290,7 +291,7 @@ function isAuthorized(req) {
   
   const authorized = token === key;
   if (!authorized) {
-    process.stderr.write(`[AUTH_FAILED] Token provided: "${token}" (len:${token.length}) | Expected key: "${key}" (len:${key.length})\n`);
+    process.stderr.write(`[AUTH_FAILED] Token len:${token.length}\n`);
   }
   return authorized;
 }
@@ -302,7 +303,9 @@ async function handle(req, res) {
   
   console.log(`[REQ] ${req.method} ${path}`);
   if (path.startsWith("/api/")) {
-    console.log(`[HEADERS] ${JSON.stringify(req.headers)}`);
+    const headers = { ...req.headers };
+    if (headers.authorization) headers.authorization = "[redacted]";
+    console.log(`[HEADERS] ${JSON.stringify(headers)}`);
   }
 
   if (req.method === "OPTIONS") {
