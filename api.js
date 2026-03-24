@@ -746,6 +746,52 @@ async function handle(req, res) {
       return;
     }
 
+    if (req.method === "POST" && path === "/api/config/gemini") {
+      const body = (await readJsonBody(req)) ?? {};
+      const key = String(body.key ?? "").trim();
+      if (!key) {
+        sendJson(res, 400, { error: "key_required" }, cors);
+        return;
+      }
+      
+      // Intentar actualizar el .env en el VPS vía SSH (si estamos en el VPS)
+      // O simplemente actualizar el .env local si estamos en local.
+      // Para simplificar, lo guardamos en el .env del directorio actual.
+      try {
+        const envPath = pathMod.join(process.cwd(), ".env");
+        let content = "";
+        try {
+          content = await fs.readFile(envPath, "utf8");
+        } catch {
+          content = "";
+        }
+        
+        const lines = content.split("\n");
+        let found = false;
+        const newLines = lines.map(line => {
+          if (line.startsWith("GEMINI_API_KEY=") || line.startsWith("GOOGLE_API_KEY=")) {
+            found = true;
+            return `GEMINI_API_KEY=${key}`;
+          }
+          return line;
+        });
+        
+        if (!found) {
+          newLines.push(`GEMINI_API_KEY=${key}`);
+        }
+        
+        await fs.writeFile(envPath, newLines.join("\n").trim() + "\n", "utf8");
+        
+        // Notificar al proceso que recargue el env (opcional, pm2 restart es mejor)
+        process.env.GEMINI_API_KEY = key;
+        
+        sendJson(res, 200, { ok: true, message: "GEMINI_API_KEY actualizada. Reinicia el bot para aplicar." }, cors);
+      } catch (e) {
+        sendJson(res, 500, { error: "file_error", details: e.message }, cors);
+      }
+      return;
+    }
+
     if (req.method === "POST" && path === "/api/meme/analyze") {
       try {
         const body = await readJsonBody(req);
